@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="50%" stop-color="#0f766e" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <!-- Inner Card -->
+  <rect x="56" y="56" width="400" height="400" rx="72" fill="url(#cardBg)" filter="url(#shadow)" stroke="#10b981" stroke-width="4" stroke-opacity="0.4" />
+
+  <!-- Arabic Letter / Accounting Emblem (م / المحاسب الذكي) -->
+  <g transform="translate(256, 230)">
+    <!-- Shield / Ledger outline -->
+    <path d="M-90,-110 L90,-110 C90,-110 110,-40 110,30 C110,100 0,160 0,160 C0,160 -110,100 -110,30 C-110,-40 -90,-110 -90,-110 Z"
+          fill="none" stroke="#34d399" stroke-width="12" stroke-linejoin="round" />
+
+    <!-- Ledger lines & Currency Coin -->
+    <line x1="-50" y1="-50" x2="50" y2="-50" stroke="#38bdf8" stroke-width="12" stroke-linecap="round" />
+    <line x1="-50" y1="-10" x2="20" y2="-10" stroke="#94a3b8" stroke-width="10" stroke-linecap="round" />
+    <line x1="-50" y1="30" x2="50" y2="30" stroke="#34d399" stroke-width="12" stroke-linecap="round" />
+
+    <!-- Center Check / Trend Arrow -->
+    <path d="M-20,70 L0,90 L40,50" fill="none" stroke="#10b981" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- Text / Badge -->
+  <text x="256" y="420" font-family="Arial, sans-serif" font-size="32" font-weight="900" fill="#f8fafc" text-anchor="middle" letter-spacing="2">المحاسب الذكي</text>
+</svg>

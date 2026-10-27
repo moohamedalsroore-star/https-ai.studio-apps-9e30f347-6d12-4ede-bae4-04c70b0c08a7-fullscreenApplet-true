@@ -1,0 +1,6 @@
+{
+  "name": "الغفاري سوفت برو - Al-Ghaffari Soft Pro",
+  "description": "نظام محاسبي وإداري متكامل وشامل مع قيود آلية، فواتير مبيعات ومشتريات، إدارة المخزون، الصناديق والبنوك، والقوائم المالية الاحترافية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
