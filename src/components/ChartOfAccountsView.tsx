@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { Account, AccountCategory } from '../types/accounting';
+import { DocumentActionsBar } from './DocumentActionsBar';
 
 export const ChartOfAccountsView: React.FC = () => {
   const {
@@ -128,13 +129,21 @@ export const ChartOfAccountsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          إضافة حساب فرعي جديد
-        </button>
+        <div className="flex items-center gap-2">
+          <DocumentActionsBar
+            targetElementId="coa-tree-content"
+            filename={`دليل_الحسابات_العامة_${settings.companyName}`}
+            documentTitle="دليل وشجرة الحسابات العامة والأرصدة اللحظية"
+            hasData={accounts.length > 0}
+          />
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            إضافة حساب فرعي جديد
+          </button>
+        </div>
       </div>
 
       {/* Categories Buttons */}
@@ -172,8 +181,19 @@ export const ChartOfAccountsView: React.FC = () => {
       </div>
 
       {/* Interactive Hierarchical Accounts Tree / Table */}
-      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 shadow-xl">
-        <table className="w-full text-right text-sm">
+      <div id="coa-tree-content" className="space-y-4 printable-card">
+        {/* Printable Accounts Tree Header */}
+        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
+          <h2 className="text-2xl font-black">{settings.companyName}</h2>
+          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
+          <h3 className="text-lg font-bold mt-2">دليل وشجرة الحسابات العامة والأرصدة اللحظية (Chart of Accounts)</h3>
+          <div className="text-xs text-slate-600 font-mono-num mt-1">
+            التاريخ: {new Date().toISOString().split('T')[0]} | عدد الحسابات: {filteredAccounts.length} | العملة: {settings.baseCurrency}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 shadow-xl">
+          <table className="w-full text-right text-sm">
           <thead className="bg-slate-800/90 text-slate-300 font-bold text-xs uppercase tracking-wider border-b border-slate-700">
             <tr>
               <th className="py-3 px-4">كود الحساب</th>
@@ -265,6 +285,7 @@ export const ChartOfAccountsView: React.FC = () => {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Add Sub-Account Modal */}

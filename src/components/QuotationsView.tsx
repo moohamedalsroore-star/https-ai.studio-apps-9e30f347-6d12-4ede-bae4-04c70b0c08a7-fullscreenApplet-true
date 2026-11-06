@@ -12,10 +12,18 @@ import {
   X,
   FileCheck,
   Send,
+  Copy,
+  Sparkles,
+  Package,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
-import { Quotation } from '../types/accounting';
+import { Quotation, Product, PriceTier } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
+import { DocumentActionsBar } from './DocumentActionsBar';
+import { FreeNumberInput } from './FreeNumberInput';
+import { useBackHandler } from '../hooks/useBackHandler';
+import { ProductQuickSearchModal } from './ProductQuickSearchModal';
+import { DuplicateItemResolutionModal, DuplicateItemInfo } from './DuplicateItemResolutionModal';
 
 export const QuotationsView: React.FC = () => {
   const {
@@ -24,6 +32,7 @@ export const QuotationsView: React.FC = () => {
     products,
     settings,
     createQuotation,
+    cloneQuotation,
     convertQuoteToInvoice,
     setActiveView,
     currencies,
@@ -37,6 +46,19 @@ export const QuotationsView: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [previewQuote, setPreviewQuote] = useState<Quotation | null>(null);
 
+  // Android hardware back button and swipe-back gesture handling
+  useBackHandler({
+    isOpen: showCreateModal,
+    onClose: () => setShowCreateModal(false),
+    stateKey: 'quoteModal',
+  });
+
+  useBackHandler({
+    isOpen: Boolean(previewQuote),
+    onClose: () => setPreviewQuote(null),
+    stateKey: 'quotePreview',
+  });
+
   // New quote form state: Registered customer vs Free text custom customer
   const [customerMode, setCustomerMode] = useState<'REGISTERED' | 'CUSTOM'>('REGISTERED');
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
@@ -47,6 +69,7 @@ export const QuotationsView: React.FC = () => {
 
   // Currency & Validity
   const [quoteCurrency, setQuoteCurrency] = useState(settings.baseCurrency);
+  const [priceTier, setPriceTier] = useState<PriceTier>('RETAIL');
   const [validDays, setValidDays] = useState(15);
   const [notes, setNotes] = useState('عرض السعر ساري لمدة 15 يوماً من تاريخه. الأسعار شاملة ضريبة القيمة المضافة.');
   const [quoteRows, setQuoteRows] = useState<
@@ -61,6 +84,9 @@ export const QuotationsView: React.FC = () => {
     }[]
   >([]);
 
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const activeQuote = quotations.find((q) => q.id === selectedQuoteId) || quotations[0] || null;
+
   const filteredQuotes = quotations.filter((q) => {
     return (
       q.quoteNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -69,6 +95,26 @@ export const QuotationsView: React.FC = () => {
   });
 
   const registeredCustomers = contacts.filter((c) => c.type === 'CUSTOMER');
+
+  const getProductPriceForTier = (prod: Product, tier: PriceTier = priceTier) => {
+    if (tier === 'SUPER_WHOLESALE') return prod.specialPrice || prod.wholesalePrice || prod.salePrice;
+    if (tier === 'WHOLESALE') return prod.wholesalePrice || prod.salePrice;
+    return prod.salePrice;
+  };
+
+  const handlePriceTierChange = (newTier: PriceTier) => {
+    setPriceTier(newTier);
+    setQuoteRows((prev) =>
+      prev.map((row) => {
+        const prod = products.find((p) => p.id === row.productId);
+        if (!prod) return row;
+        return {
+          ...row,
+          unitPrice: getProductPriceForTier(prod, newTier),
+        };
+      })
+    );
+  };
 
   const handleOpenCreate = () => {
     if (registeredCustomers.length > 0) {
@@ -81,7 +127,9 @@ export const QuotationsView: React.FC = () => {
     setCustomPhone('');
     setCustomTaxNumber('');
     setSaveToContacts(false);
+    setValidDays(15);
     setQuoteCurrency(settings.baseCurrency);
+    setPriceTier('RETAIL');
 
     if (products.length > 0) {
       setQuoteRows([
@@ -89,7 +137,7 @@ export const QuotationsView: React.FC = () => {
           productId: products[0].id,
           productName: products[0].nameAr,
           quantity: 1,
-          unitPrice: products[0].salePrice,
+          unitPrice: getProductPriceForTier(products[0], 'RETAIL'),
           costPrice: products[0].costPrice,
           discount: 0,
           taxRate: settings.taxEnabled !== false ? settings.defaultTaxRate : 0,
@@ -101,30 +149,119 @@ export const QuotationsView: React.FC = () => {
     setShowCreateModal(true);
   };
 
+  const [showQuickSearchModal, setShowQuickSearchModal] = useState(false);
+  const [duplicateItemModalInfo, setDuplicateItemModalInfo] = useState<DuplicateItemInfo | null>(null);
+
+  // Onyx Pro: Prevent duplicate items within quotation, with smart resolution dialog
   const handleProductChange = (index: number, productId: string) => {
     const prod = products.find((p) => p.id === productId);
     if (!prod) return;
+
+    // Check if product already exists in another row
+    const existingIndex = quoteRows.findIndex((r, idx) => idx !== index && r.productId === productId);
+    if (existingIndex !== -1) {
+      setDuplicateItemModalInfo({
+        productId: prod.id,
+        productName: prod.nameAr,
+        productCode: prod.code,
+        unit: prod.unit,
+        existingQuantity: quoteRows[existingIndex].quantity,
+        existingUnitPrice: quoteRows[existingIndex].unitPrice,
+        addedQuantity: quoteRows[index]?.quantity || 1,
+        addedUnitPrice: getProductPriceForTier(prod, priceTier),
+        rowIndex: existingIndex,
+      });
+      return;
+    }
+
     const updated = [...quoteRows];
     updated[index] = {
       ...updated[index],
       productId: prod.id,
       productName: prod.nameAr,
-      unitPrice: prod.salePrice,
+      unitPrice: getProductPriceForTier(prod, priceTier),
       costPrice: prod.costPrice,
     };
     setQuoteRows(updated);
   };
 
+  const handleSelectFromQuickSearch = (prod: Product, quantity: number, unitPrice: number) => {
+    const existingIndex = quoteRows.findIndex((r) => r.productId === prod.id);
+    if (existingIndex !== -1) {
+      setDuplicateItemModalInfo({
+        productId: prod.id,
+        productName: prod.nameAr,
+        productCode: prod.code,
+        unit: prod.unit,
+        existingQuantity: quoteRows[existingIndex].quantity,
+        existingUnitPrice: quoteRows[existingIndex].unitPrice,
+        addedQuantity: quantity,
+        addedUnitPrice: unitPrice,
+        rowIndex: existingIndex,
+      });
+      return;
+    }
+
+    setQuoteRows((prev) => [
+      ...prev,
+      {
+        productId: prod.id,
+        productName: prod.nameAr,
+        quantity,
+        unitPrice,
+        costPrice: prod.costPrice,
+        discount: 0,
+        taxRate: settings.taxEnabled !== false ? settings.defaultTaxRate : 0,
+      },
+    ]);
+    showToast(`تمت إضافة الصنف «${prod.nameAr}» لعرض السعر بنجاح ✓`, 'success');
+  };
+
+  const handleResolveDuplicate = (
+    action: 'MERGE' | 'REPLACE' | 'REMOVE',
+    resolvedQuantity: number,
+    resolvedUnitPrice: number
+  ) => {
+    if (!duplicateItemModalInfo) return;
+    const idx = duplicateItemModalInfo.rowIndex;
+    if (idx === undefined || idx < 0 || idx >= quoteRows.length) {
+      setDuplicateItemModalInfo(null);
+      return;
+    }
+
+    const updated = [...quoteRows];
+    if (action === 'MERGE') {
+      updated[idx].quantity = resolvedQuantity;
+      showToast(`تم دمج كمية الصنف «${duplicateItemModalInfo.productName}» بنجاح (${resolvedQuantity} وحدة) ✓`, 'success');
+    } else if (action === 'REPLACE') {
+      updated[idx].quantity = resolvedQuantity;
+      updated[idx].unitPrice = resolvedUnitPrice;
+      showToast(`تم تحديث الصنف «${duplicateItemModalInfo.productName}» بالكمية والسعر الجديد ✓`, 'info');
+    } else if (action === 'REMOVE') {
+      if (updated.length > 1) {
+        updated.splice(idx, 1);
+      }
+      showToast(`تم حذف الصنف من عرض السعر ✓`, 'info');
+    }
+    setQuoteRows(updated);
+    setDuplicateItemModalInfo(null);
+  };
+
   const addRow = () => {
     if (products.length === 0) return;
+    const availableProd = products.find((p) => !quoteRows.some((r) => r.productId === p.id)) || products[0];
+    if (quoteRows.some((r) => r.productId === availableProd.id)) {
+      showToast('جميع الأصناف مسجلة في عرض السعر بالفعل، يمكنك زيادة الكمية في الجدول.', 'info');
+      return;
+    }
     setQuoteRows([
       ...quoteRows,
       {
-        productId: products[0].id,
-        productName: products[0].nameAr,
+        productId: availableProd.id,
+        productName: availableProd.nameAr,
         quantity: 1,
-        unitPrice: products[0].salePrice,
-        costPrice: products[0].costPrice,
+        unitPrice: getProductPriceForTier(availableProd, priceTier),
+        costPrice: availableProd.costPrice,
         discount: 0,
         taxRate: settings.taxEnabled !== false ? settings.defaultTaxRate : 0,
       },
@@ -194,7 +331,7 @@ export const QuotationsView: React.FC = () => {
       fullNotes = `${extraContact}\n${notes}`.trim();
     }
 
-    createQuotation({
+    const newQ = createQuotation({
       partyId,
       partyName,
       validUntil: validUntilDate,
@@ -203,6 +340,10 @@ export const QuotationsView: React.FC = () => {
       items: quoteRows,
       notes: fullNotes,
     });
+
+    if (newQ?.id) {
+      setSelectedQuoteId(newQ.id);
+    }
 
     showToast('تم حفظ عرض السعر بنجاح ✓', 'success');
     setShowCreateModal(false);
@@ -225,8 +366,8 @@ export const QuotationsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 pb-28 sm:pb-12">
+      {/* Header with Onyx Pro style conditional document action buttons */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white flex items-center gap-2">
@@ -238,13 +379,27 @@ export const QuotationsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenCreate}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          إنشاء عرض سعر جديد
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Onyx Pro Rule: Show Document Actions ONLY if saved data exists in the database */}
+          {quotations.length > 0 && activeQuote && (
+            <div className="flex items-center gap-2 animate-in fade-in duration-200">
+              <DocumentActionsBar
+                targetElementId="selected-quote-document-card"
+                filename={`عرض_سعر_${activeQuote.quoteNumber}`}
+                documentTitle={`عرض سعر رقم ${activeQuote.quoteNumber} - ${activeQuote.partyName}`}
+                hasData={quotations.length > 0}
+              />
+            </div>
+          )}
+
+          <button
+            onClick={handleOpenCreate}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            إنشاء عرض سعر جديد
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search */}
@@ -289,71 +444,115 @@ export const QuotationsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
-              {filteredQuotes.map((q) => (
-                <tr key={q.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-mono-num font-bold text-emerald-400 text-xs">
-                    {q.quoteNumber}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono-num text-xs text-slate-400">{q.date}</td>
-                  <td className="py-3.5 px-4 font-mono-num text-xs text-amber-400">{q.validUntil}</td>
-                  <td className="py-3.5 px-4 font-bold text-white">{q.partyName}</td>
-                  <td className="py-3.5 px-4 text-center font-mono-num text-slate-300">
-                    {q.subtotal.toFixed(2)} {q.currency || settings.baseCurrency}
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-mono-num text-slate-400 text-xs">
-                    {q.taxTotal.toFixed(2)} {q.currency || settings.baseCurrency}
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-mono-num font-extrabold text-white text-base">
-                    {q.grandTotal.toFixed(2)} {q.currency || settings.baseCurrency}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    {q.status === 'CONVERTED' ? (
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        معتمد ومحول لفاتورة
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                        عرض سعر قيد الانتظار
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      {q.status !== 'CONVERTED' && (
-                        <button
-                          onClick={() => handleConvert(q)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow transition-colors"
-                          title="تحويل إلى فاتورة مبيعات مباشرة"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>تحويل لفاتورة</span>
-                        </button>
+              {filteredQuotes.map((q) => {
+                const isSelected = activeQuote?.id === q.id;
+                return (
+                  <tr
+                    key={q.id}
+                    onClick={() => setSelectedQuoteId(q.id)}
+                    className={`transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-950/40 ring-1 ring-emerald-500/50'
+                        : 'hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <td className="py-3.5 px-4 font-mono-num font-bold text-emerald-400 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        {isSelected ? (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="المستند المحدد حالياً للطباعة والمعاينة" />
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-transparent" />
+                        )}
+                        <span>{q.quoteNumber}</span>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                            المحدد
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono-num text-xs text-slate-400">{q.date}</td>
+                    <td className="py-3.5 px-4 font-mono-num text-xs text-amber-400">{q.validUntil}</td>
+                    <td className="py-3.5 px-4 font-bold text-white">{q.partyName}</td>
+                    <td className="py-3.5 px-4 text-center font-mono-num text-slate-300">
+                      {q.subtotal.toFixed(2)} {q.currency || settings.baseCurrency}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono-num text-slate-400 text-xs">
+                      {q.taxTotal.toFixed(2)} {q.currency || settings.baseCurrency}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono-num font-extrabold text-white text-base">
+                      {q.grandTotal.toFixed(2)} {q.currency || settings.baseCurrency}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {q.status === 'CONVERTED' ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          معتمد ومحول لفاتورة
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                          عرض سعر قيد الانتظار
+                        </span>
                       )}
-                      <button
-                        onClick={() => setPreviewQuote(q)}
-                        className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
-                        title="معاينة وطباعة أو حفظ PDF"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          openDeleteConfirm({
-                            title: 'تأكيد حذف عرض السعر',
-                            itemName: `عرض السعر رقم: ${q.quoteNumber}`,
-                            message: `العميل: ${q.partyName} - إجمالي العرض: ${q.grandTotal.toFixed(2)} ${q.currency || settings.baseCurrency}`,
-                            onConfirm: () => deleteQuotation(q.id),
-                          });
-                        }}
-                        className="p-1.5 rounded-lg bg-slate-800 text-red-400 hover:text-white hover:bg-red-600 transition-colors cursor-pointer"
-                        title="حذف عرض السعر"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        {q.status !== 'CONVERTED' && (
+                          <button
+                            onClick={() => handleConvert(q)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow transition-colors"
+                            title="تحويل إلى فاتورة مبيعات مباشرة"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>تحويل لفاتورة</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setSelectedQuoteId(q.id);
+                            setPreviewQuote(q);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+                          title="معاينة وطباعة أو حفظ PDF"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            const cloned = cloneQuotation(q.id);
+                            if (cloned) {
+                              setSelectedQuoteId(cloned.id);
+                              showToast(`تم استنساخ عرض السعر كمسودة جديدة برقم ${cloned.quoteNumber} (نظام أونكس برو) ✓`, 'success');
+                            }
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 text-blue-400 hover:text-white hover:bg-blue-600 transition-colors cursor-pointer"
+                          title="نسخ عرض السعر (أونكس برو: نسخ مستند سابق)"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            openDeleteConfirm({
+                              title: 'تأكيد حذف عرض السعر',
+                              itemName: `عرض السعر رقم: ${q.quoteNumber}`,
+                              message: `العميل: ${q.partyName} - إجمالي العرض: ${q.grandTotal.toFixed(2)} ${q.currency || settings.baseCurrency}`,
+                              onConfirm: () => {
+                                deleteQuotation(q.id);
+                                if (selectedQuoteId === q.id) {
+                                  setSelectedQuoteId(null);
+                                }
+                              },
+                            });
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 text-red-400 hover:text-white hover:bg-red-600 transition-colors cursor-pointer"
+                          title="حذف عرض السعر"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -361,22 +560,33 @@ export const QuotationsView: React.FC = () => {
 
       {/* CREATE QUOTE MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-6">
-            <div className="p-4 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+            <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <FileText className="w-5 h-5 text-emerald-400" />
                 إنشاء عرض سعر جديد للعميل
               </h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold border border-slate-700 cursor-pointer transition-all active:scale-95 shadow-sm"
+                  title="الرجوع إلى الخلف"
+                >
+                  <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <span>رجوع للخلف</span>
+                </button>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveQuote} className="p-6 space-y-6">
+            <form onSubmit={handleSaveQuote} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-8 touch-pan-y">
               {/* Customer Selection: Registered Account vs Free-Text Custom Name */}
               <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/80 pb-2.5">
@@ -520,8 +730,23 @@ export const QuotationsView: React.FC = () => {
                 )}
               </div>
 
-              {/* Currency & Validity */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Pricing Tier, Currency & Validity */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-amber-400 mb-1">
+                    فئة التسعير
+                  </label>
+                  <select
+                    value={priceTier}
+                    onChange={(e) => handlePriceTierChange(e.target.value as PriceTier)}
+                    className="w-full px-3 py-2 bg-slate-800 border border-amber-500/50 rounded-xl text-sm font-bold text-amber-300 focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="RETAIL">مفرق (تجزئة)</option>
+                    <option value="WHOLESALE">سعر جملة</option>
+                    <option value="SUPER_WHOLESALE">سعر جملة الجملة</option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
                     عملة عرض السعر
@@ -543,29 +768,76 @@ export const QuotationsView: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-300 mb-1">
                     فترة صلاحية العرض (أيام)
                   </label>
-                  <input
-                    type="number"
-                    min="1"
+                  <FreeNumberInput
                     value={validDays}
-                    onChange={(e) => setValidDays(parseInt(e.target.value) || 15)}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono-num font-bold focus:outline-none focus:border-emerald-500"
+                    onChange={(val) => setValidDays(val || 15)}
+                    allowDecimals={false}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-bold focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               {/* Items Table */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-white text-sm">الأصناف والأسعار المقترحة</h4>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <h4 className="font-bold text-white text-sm">الأصناف والأسعار المقترحة</h4>
+                    {/* Price Tier Selector */}
+                    <div className="inline-flex rounded-lg bg-slate-950 p-1 border border-slate-700/80">
+                      <button
+                        type="button"
+                        onClick={() => handlePriceTierChange('RETAIL')}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          priceTier === 'RETAIL'
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        سعر التجزئة
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePriceTierChange('WHOLESALE')}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          priceTier === 'WHOLESALE'
+                            ? 'bg-amber-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        سعر الجملة
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePriceTierChange('SUPER_WHOLESALE')}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          priceTier === 'SUPER_WHOLESALE'
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        جملة الجملة
+                      </button>
+                    </div>
+                  </div>
                   {products.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={addRow}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs cursor-pointer border border-emerald-500/30"
-                    >
-                      <PlusCircle className="w-3.5 h-3.5" />
-                      إضافة صنف آخر
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickSearchModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-400 font-bold text-xs cursor-pointer border border-emerald-500/40 transition-all shadow-sm"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>بحث متقدم واختيار أصناف</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addRow}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer border border-slate-700"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        <span>إضافة صنف آخر</span>
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-xs text-amber-400">
                       يجب إضافة أصناف في المخزون أولاً لتتمكن من تسعيرها.
@@ -603,50 +875,45 @@ export const QuotationsView: React.FC = () => {
                                 >
                                   {products.map((p) => (
                                     <option key={p.id} value={p.id}>
-                                      {p.nameAr}
+                                      {p.nameAr} (متوفر: {p.stockQty} {p.unit})
                                     </option>
                                   ))}
                                 </select>
                               </td>
                               <td className="py-2 px-3 text-center">
-                                <input
-                                  type="number"
-                                  min="1"
+                                <FreeNumberInput
                                   value={row.quantity}
-                                  onChange={(e) => {
+                                  onChange={(val) => {
                                     const updated = [...quoteRows];
-                                    updated[idx].quantity = parseInt(e.target.value) || 1;
+                                    updated[idx].quantity = val || 1;
                                     setQuoteRows(updated);
                                   }}
-                                  className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-mono-num font-bold"
+                                  allowDecimals={false}
+                                  className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-bold"
                                 />
                               </td>
                               <td className="py-2 px-3 text-center">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
+                                <FreeNumberInput
                                   value={row.unitPrice}
-                                  onChange={(e) => {
+                                  onChange={(val) => {
                                     const updated = [...quoteRows];
-                                    updated[idx].unitPrice = parseFloat(e.target.value) || 0;
+                                    updated[idx].unitPrice = val;
                                     setQuoteRows(updated);
                                   }}
-                                  className="w-24 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-mono-num font-bold"
+                                  placeholder="0.00"
+                                  className="w-24 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-bold"
                                 />
                               </td>
                               <td className="py-2 px-3 text-center">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
+                                <FreeNumberInput
                                   value={row.discount}
-                                  onChange={(e) => {
+                                  onChange={(val) => {
                                     const updated = [...quoteRows];
-                                    updated[idx].discount = parseFloat(e.target.value) || 0;
+                                    updated[idx].discount = val;
                                     setQuoteRows(updated);
                                   }}
-                                  className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-mono-num"
+                                  placeholder="0.00"
+                                  className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white"
                                 />
                               </td>
                               <td className="py-2 px-3 text-center font-mono-num font-bold text-emerald-400">
@@ -714,15 +981,22 @@ export const QuotationsView: React.FC = () => {
                 <span className="text-[10px] text-emerald-300 hidden sm:inline">💡 اختر "حفظ بتنسيق PDF"</span>
               </div>
               <div className="flex items-center gap-2">
+                <DocumentActionsBar
+                  targetElementId="quotation-print-content"
+                  filename={`عرض_سعر_${previewQuote.quoteNumber}`}
+                  documentTitle={`عرض سعر رقم ${previewQuote.quoteNumber}`}
+                />
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-600/30"
-                  title="طباعة عرض السعر أو حفظه كملف PDF"
+                  type="button"
+                  onClick={() => setPreviewQuote(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold border border-slate-600 cursor-pointer transition-all active:scale-95"
+                  title="الرجوع إلى قائمة عروض الأسعار"
                 >
-                  <Printer className="w-4 h-4" />
-                  طباعة / حفظ PDF
+                  <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <span>رجوع</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setPreviewQuote(null)}
                   className="p-1 rounded-xl text-slate-400 hover:text-white cursor-pointer"
                 >
@@ -731,7 +1005,7 @@ export const QuotationsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-8 text-right printable-card text-xs space-y-4">
+            <div id="quotation-print-content" className="p-8 text-right printable-card text-xs space-y-4">
               <div className="text-center border-b-2 border-slate-900 pb-3">
                 <h3 className="text-lg font-black">{settings.companyName}</h3>
                 <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
@@ -804,6 +1078,97 @@ export const QuotationsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Hidden Print Container for the Active Selected Quotation (Used by top action bar) */}
+      {activeQuote && (
+        <div id="selected-quote-document-card" className="hidden print:block printable-card p-8 text-right text-xs space-y-4">
+          <div className="text-center border-b-2 border-slate-900 pb-3">
+            <h3 className="text-lg font-black text-slate-900">{settings.companyName}</h3>
+            <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
+            <div className="font-bold text-sm text-slate-900 mt-2">عرض سعر تجاري معتمد (Quotation)</div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl text-slate-900">
+            <div>
+              <div><span className="font-bold">رقم العرض:</span> {activeQuote.quoteNumber}</div>
+              <div><span className="font-bold">تاريخ الإصدار:</span> {activeQuote.date}</div>
+              <div><span className="font-bold text-amber-700">ساري حتى:</span> {activeQuote.validUntil}</div>
+            </div>
+            <div>
+              <div><span className="font-bold">العميل المستهدف:</span> {activeQuote.partyName}</div>
+              <div><span className="font-bold">العملة:</span> {activeQuote.currency || settings.baseCurrency}</div>
+            </div>
+          </div>
+
+          <table className="w-full text-right border-collapse text-xs text-slate-900">
+            <thead>
+              <tr className="border-b-2 border-slate-900 bg-slate-200">
+                <th className="py-2 px-2">#</th>
+                <th className="py-2 px-2">الصنف</th>
+                <th className="py-2 px-2 text-center">الكمية</th>
+                <th className="py-2 px-2 text-center">سعر الوحدة</th>
+                <th className="py-2 px-2 text-center">الإجمالي</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-300">
+              {activeQuote.items.map((it, idx) => (
+                <tr key={it.id}>
+                  <td className="py-2 px-2 font-mono-num">{idx + 1}</td>
+                  <td className="py-2 px-2 font-bold">{it.productName}</td>
+                  <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
+                  <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
+                  <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="border-t-2 border-slate-900 pt-3 flex justify-between text-slate-900">
+            <div className="text-xs text-slate-600 max-w-xs">
+              <div className="font-bold mb-1">الشروط والأحكام:</div>
+              <div>{activeQuote.notes}</div>
+            </div>
+            <div className="w-48 space-y-1 font-mono-num text-xs">
+              <div className="flex justify-between">
+                <span>المجموع:</span>
+                <span>{activeQuote.subtotal.toFixed(2)} {activeQuote.currency || settings.baseCurrency}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>الضريبة:</span>
+                <span>{activeQuote.taxTotal.toFixed(2)} {activeQuote.currency || settings.baseCurrency}</span>
+              </div>
+              <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
+                <span>الإجمالي الشامل:</span>
+                <span>{activeQuote.grandTotal.toFixed(2)} {activeQuote.currency || settings.baseCurrency}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
+            <span className="font-bold">المبلغ كتابة:</span>{' '}
+            {tafqeet(activeQuote.grandTotal, activeQuote.currency || settings.baseCurrency, 'هللة')}
+          </div>
+        </div>
+      )}
+
+      {/* Onyx Pro: Product Quick Search Modal */}
+      <ProductQuickSearchModal
+        isOpen={showQuickSearchModal}
+        onClose={() => setShowQuickSearchModal(false)}
+        onSelectProduct={handleSelectFromQuickSearch}
+        priceTier={priceTier}
+        title="البحث المتقدم واختيار أصناف عرض السعر"
+        excludeProductIds={quoteRows.map((r) => r.productId)}
+      />
+
+      {/* Onyx Pro: Duplicate Prevention & Merging Dialog */}
+      <DuplicateItemResolutionModal
+        isOpen={Boolean(duplicateItemModalInfo)}
+        itemInfo={duplicateItemModalInfo}
+        onClose={() => setDuplicateItemModalInfo(null)}
+        onResolve={handleResolveDuplicate}
+        currency={quoteCurrency || settings.baseCurrency}
+      />
     </div>
   );
 };

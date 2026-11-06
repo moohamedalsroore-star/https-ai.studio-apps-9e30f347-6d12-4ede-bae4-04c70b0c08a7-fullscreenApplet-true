@@ -349,6 +349,35 @@ export function generateVoucherJournal(voucher: Voucher, accounts: Account[]): J
       foreignAmount: voucher.amount,
       memo: voucher.description || `قبض من ${voucher.partyAccountName}`,
     });
+  } else if (voucher.type === 'TRANSFER') {
+    const toAcc = accounts.find((a) => a.id === voucher.toAccountId) || counterpartyAcc;
+    // الحساب المحول إليه (مدين)
+    lines.push({
+      id: generateId('line'),
+      accountId: toAcc?.id || voucher.toAccountId || voucher.partyAccountId,
+      accountCode: toAcc?.code || '1102',
+      accountName: toAcc?.nameAr || voucher.toAccountName || voucher.partyAccountName,
+      debit: amountBase,
+      credit: 0,
+      currency: curr,
+      exchangeRate: rate,
+      foreignAmount: voucher.amount,
+      memo: voucher.description || `تحويل وارد إلى ${toAcc?.nameAr || voucher.toAccountName}`,
+    });
+
+    // الحساب المحول منه (دائن)
+    lines.push({
+      id: generateId('line'),
+      accountId: cashOrBank?.id || voucher.accountId,
+      accountCode: cashOrBank?.code || '1101',
+      accountName: cashOrBank?.nameAr || voucher.accountName,
+      debit: 0,
+      credit: amountBase,
+      currency: curr,
+      exchangeRate: rate,
+      foreignAmount: voucher.amount,
+      memo: voucher.description || `تحويل صادر من ${cashOrBank?.nameAr || voucher.accountName}`,
+    });
   } else {
     lines.push({
       id: generateId('line'),
@@ -380,11 +409,13 @@ export function generateVoucherJournal(voucher: Voucher, accounts: Account[]): J
   const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
   const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
 
+  const voucherLabel = voucher.type === 'RECEIPT' ? 'سند قبض' : voucher.type === 'TRANSFER' ? 'سند تحويل مالي' : 'سند صرف';
+
   return {
     id: generateId('je'),
     entryNumber: `JV-${voucher.voucherNumber}`,
     date: entryDate,
-    description: `قيد آلي لـ ${voucher.type === 'RECEIPT' ? 'سند قبض' : 'سند صرف'} ${voucher.voucherNumber} (${curr} ${voucher.amount})`,
+    description: `قيد آلي لـ ${voucherLabel} ${voucher.voucherNumber} (${curr} ${voucher.amount})`,
     sourceType: voucher.type === 'RECEIPT' ? 'RECEIPT_VOUCHER' : 'PAYMENT_VOUCHER',
     sourceId: voucher.id,
     branchId: voucher.branchId,

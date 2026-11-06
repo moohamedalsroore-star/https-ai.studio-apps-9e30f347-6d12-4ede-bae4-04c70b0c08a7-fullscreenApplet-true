@@ -54,18 +54,18 @@ export const BranchesView: React.FC = () => {
   // Forms
   const [branchForm, setBranchForm] = useState({
     code: `BR-0${branches.length + 1}`,
-    nameAr: '',
+    nameAr: branches.length === 0 ? 'المركز الرئيسي' : '',
     address: 'الرياض',
     phone: '0500000000',
-    isMain: false,
+    isMain: branches.length === 0,
   });
 
   const [whForm, setWhForm] = useState({
     branchId: branches[0]?.id || '',
     code: `WH-0${warehouses.length + 1}`,
-    nameAr: '',
+    nameAr: warehouses.length === 0 ? 'مستودع المركز الرئيسي' : '',
     location: 'المستودعات المركزية',
-    isMain: false,
+    isMain: warehouses.length === 0,
   });
 
   const [ccForm, setCcForm] = useState({

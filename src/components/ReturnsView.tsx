@@ -11,10 +11,14 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   AlertCircle,
+  ArrowRight,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { PaymentMethod, ReturnInvoice } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
+import { DocumentActionsBar } from './DocumentActionsBar';
+import { FreeNumberInput } from './FreeNumberInput';
+import { useBackHandler } from '../hooks/useBackHandler';
 
 export const ReturnsView: React.FC = () => {
   const {
@@ -32,6 +36,22 @@ export const ReturnsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [previewReturn, setPreviewReturn] = useState<ReturnInvoice | null>(null);
+
+  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
+  const activeReturn = returnInvoices.find((r) => r.id === selectedReturnId) || returnInvoices[0] || null;
+
+  // Android hardware back button and swipe-back gestures
+  useBackHandler({
+    isOpen: showCreateModal,
+    onClose: () => setShowCreateModal(false),
+    stateKey: 'returnModal',
+  });
+
+  useBackHandler({
+    isOpen: Boolean(previewReturn),
+    onClose: () => setPreviewReturn(null),
+    stateKey: 'returnPreview',
+  });
 
   // Form State
   const [returnType, setReturnType] = useState<'SALES_RETURN' | 'PURCHASE_RETURN'>('SALES_RETURN');
@@ -131,7 +151,7 @@ export const ReturnsView: React.FC = () => {
       name: returnType === 'SALES_RETURN' ? 'عميل نقدي عام' : 'مورد عام',
     };
 
-    createReturnInvoice({
+    const newR = createReturnInvoice({
       type: returnType,
       originalInvoiceNumber: originalInvNum,
       partyId: party.id,
@@ -141,13 +161,17 @@ export const ReturnsView: React.FC = () => {
       reason,
     });
 
+    if (newR?.id) {
+      setSelectedReturnId(newR.id);
+    }
+
     showToast('تم ترحيل إشعار المردود وتحديث المخزون والقيود بنجاح ✓', 'success');
     setShowCreateModal(false);
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header with Onyx Pro style conditional document action buttons */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-white flex items-center gap-2">
@@ -159,7 +183,19 @@ export const ReturnsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Onyx Pro Rule: Show Document Actions ONLY if saved data exists in the database */}
+          {returnInvoices.length > 0 && activeReturn && (
+            <div className="flex items-center gap-2 animate-in fade-in duration-200">
+              <DocumentActionsBar
+                targetElementId="selected-return-document-card"
+                filename={`إشعار_مردود_${activeReturn.returnNumber}`}
+                documentTitle={`إشعار مردود: ${activeReturn.returnNumber} - ${activeReturn.partyName}`}
+                hasData={returnInvoices.length > 0}
+              />
+            </div>
+          )}
+
           <button
             onClick={() => handleOpenCreate('SALES_RETURN')}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-lg shadow-red-600/20 cursor-pointer transition-all"
@@ -245,64 +281,95 @@ export const ReturnsView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
-              {filteredReturns.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-mono-num font-bold text-red-400 text-xs">
-                    {r.returnNumber}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono-num text-xs text-slate-400">{r.date}</td>
-                  <td className="py-3.5 px-4">
-                    {r.type === 'SALES_RETURN' ? (
-                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-                        مردود مبيعات
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        مردود مشتريات
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4 font-bold text-white">{r.partyName}</td>
-                  <td className="py-3.5 px-4 text-center font-mono-num text-slate-300">
-                    {r.subtotal.toFixed(2)} {settings.baseCurrency}
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-mono-num text-slate-400 text-xs">
-                    {r.taxTotal.toFixed(2)} {settings.baseCurrency}
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-mono-num font-extrabold text-white text-base">
-                    {r.grandTotal.toFixed(2)} {settings.baseCurrency}
-                  </td>
-                  <td className="py-3.5 px-4 text-xs text-slate-300">{r.reason}</td>
-                  <td className="py-3.5 px-4 text-center font-mono-num text-xs text-emerald-400">
-                    {r.journalEntryId ? 'مرحل آلياً' : '-'}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => setPreviewReturn(r)}
-                        className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
-                        title="طباعة / تصدير PDF"
-                      >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          openDeleteConfirm({
-                            title: 'تأكيد حذف إشعار المردود',
-                            itemName: `إشعار المردود: ${r.returnNumber} (${r.type === 'SALES_RETURN' ? 'مردود مبيعات' : 'مردود مشتريات'})`,
-                            message: `الطرف: ${r.partyName} - الإجمالي: ${r.grandTotal.toFixed(2)} ${r.currency || settings.baseCurrency}. سيتم التراجع عن أثر المخزون والحسابات المرتبطة تلقائياً.`,
-                            onConfirm: () => deleteReturnInvoice(r.id),
-                          });
-                        }}
-                        className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
-                        title="حذف إشعار المردود"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredReturns.map((r) => {
+                const isSelected = activeReturn?.id === r.id;
+                return (
+                  <tr
+                    key={r.id}
+                    onClick={() => setSelectedReturnId(r.id)}
+                    className={`transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-red-950/40 ring-1 ring-red-500/50'
+                        : 'hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <td className="py-3.5 px-4 font-mono-num font-bold text-red-400 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        {isSelected ? (
+                          <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" title="المستند المحدد حالياً للطباعة والمعاينة" />
+                        ) : (
+                          <span className="w-2 h-2 rounded-full bg-transparent" />
+                        )}
+                        <span>{r.returnNumber}</span>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-red-300 bg-red-500/20 px-1.5 py-0.5 rounded border border-red-500/30">
+                            المحدد
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-mono-num text-xs text-slate-400">{r.date}</td>
+                    <td className="py-3.5 px-4">
+                      {r.type === 'SALES_RETURN' ? (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/20">
+                          مردود مبيعات
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          مردود مشتريات
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-white">{r.partyName}</td>
+                    <td className="py-3.5 px-4 text-center font-mono-num text-slate-300">
+                      {r.subtotal.toFixed(2)} {settings.baseCurrency}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono-num text-slate-400 text-xs">
+                      {r.taxTotal.toFixed(2)} {settings.baseCurrency}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono-num font-extrabold text-white text-base">
+                      {r.grandTotal.toFixed(2)} {settings.baseCurrency}
+                    </td>
+                    <td className="py-3.5 px-4 text-xs text-slate-300">{r.reason}</td>
+                    <td className="py-3.5 px-4 text-center font-mono-num text-xs text-emerald-400">
+                      {r.journalEntryId ? 'مرحل آلياً' : '-'}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => {
+                            setSelectedReturnId(r.id);
+                            setPreviewReturn(r);
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+                          title="طباعة / تصدير PDF"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            openDeleteConfirm({
+                              title: 'تأكيد حذف إشعار المردود',
+                              itemName: `إشعار المردود: ${r.returnNumber} (${r.type === 'SALES_RETURN' ? 'مردود مبيعات' : 'مردود مشتريات'})`,
+                              message: `الطرف: ${r.partyName} - الإجمالي: ${r.grandTotal.toFixed(2)} ${r.currency || settings.baseCurrency}. سيتم التراجع عن أثر المخزون والحسابات المرتبطة تلقائياً.`,
+                              onConfirm: () => {
+                                deleteReturnInvoice(r.id);
+                                if (selectedReturnId === r.id) {
+                                  setSelectedReturnId(null);
+                                }
+                              },
+                            });
+                          }}
+                          className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
+                          title="حذف إشعار المردود"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -310,24 +377,35 @@ export const ReturnsView: React.FC = () => {
 
       {/* CREATE RETURN MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-6">
-            <div className={`p-4 border-b flex items-center justify-between ${
+        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+            <div className={`p-4 border-b flex items-center justify-between shrink-0 ${
               returnType === 'SALES_RETURN' ? 'bg-red-950/40 border-red-500/30' : 'bg-amber-950/40 border-amber-500/30'
             }`}>
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <RotateCcw className="w-5 h-5 text-red-400" />
                 {returnType === 'SALES_RETURN' ? 'تسجيل إشعار مردود مبيعات (من عميل)' : 'تسجيل إشعار مردود مشتريات (إلى مورد)'}
               </h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold border border-slate-700 cursor-pointer transition-all active:scale-95 shadow-sm"
+                  title="الرجوع إلى الخلف"
+                >
+                  <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <span>رجوع للخلف</span>
+                </button>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveReturn} className="p-6 space-y-6">
+            <form onSubmit={handleSaveReturn} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -421,30 +499,27 @@ export const ReturnsView: React.FC = () => {
                                 </select>
                               </td>
                               <td className="py-2 px-3 text-center">
-                                <input
-                                  type="number"
-                                  min="1"
+                                <FreeNumberInput
                                   value={row.quantity}
-                                  onChange={(e) => {
+                                  onChange={(val) => {
                                     const updated = [...returnRows];
-                                    updated[idx].quantity = parseInt(e.target.value) || 1;
+                                    updated[idx].quantity = val || 1;
                                     setReturnRows(updated);
                                   }}
-                                  className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-mono-num font-bold"
+                                  allowDecimals={false}
+                                  className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-bold"
                                 />
                               </td>
                               <td className="py-2 px-3 text-center">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
+                                <FreeNumberInput
                                   value={row.unitPrice}
-                                  onChange={(e) => {
+                                  onChange={(val) => {
                                     const updated = [...returnRows];
-                                    updated[idx].unitPrice = parseFloat(e.target.value) || 0;
+                                    updated[idx].unitPrice = val;
                                     setReturnRows(updated);
                                   }}
-                                  className="w-24 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-mono-num font-bold"
+                                  placeholder="0.00"
+                                  className="w-24 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-center text-white font-bold"
                                 />
                               </td>
                               <td className="py-2 px-3 text-center font-mono-num font-bold text-red-400">
@@ -500,14 +575,22 @@ export const ReturnsView: React.FC = () => {
                 <span className="text-[10px] text-red-300 hidden sm:inline">💡 اختر "حفظ بتنسيق PDF"</span>
               </div>
               <div className="flex items-center gap-2">
+                <DocumentActionsBar
+                  targetElementId="return-print-content"
+                  filename={`مردود_${previewReturn.returnNumber}`}
+                  documentTitle={`إشعار مردود رقم ${previewReturn.returnNumber}`}
+                />
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-red-600/30"
+                  type="button"
+                  onClick={() => setPreviewReturn(null)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold border border-slate-600 cursor-pointer transition-all active:scale-95"
+                  title="الرجوع إلى قائمة المردودات"
                 >
-                  <Printer className="w-4 h-4" />
-                  طباعة / حفظ PDF
+                  <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <span>رجوع</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setPreviewReturn(null)}
                   className="p-1 rounded-xl text-slate-400 hover:text-white cursor-pointer"
                 >
@@ -516,7 +599,7 @@ export const ReturnsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-8 text-right printable-card text-xs space-y-4">
+            <div id="return-print-content" className="p-8 text-right printable-card text-xs space-y-4">
               <div className="text-center border-b-2 border-slate-900 pb-3">
                 <h3 className="text-lg font-black">{settings.companyName}</h3>
                 <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
@@ -583,6 +666,79 @@ export const ReturnsView: React.FC = () => {
                 {tafqeet(previewReturn.grandTotal, settings.baseCurrency, 'هللة')}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden Print Container for the Active Selected Return Invoice (Used by top action bar) */}
+      {activeReturn && (
+        <div id="selected-return-document-card" className="hidden print:block printable-card p-8 text-right text-xs space-y-4">
+          <div className="text-center border-b-2 border-slate-900 pb-3">
+            <h3 className="text-lg font-black text-slate-900">{settings.companyName}</h3>
+            <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
+            <div className="font-bold text-sm text-slate-900 mt-2">
+              {activeReturn.type === 'SALES_RETURN' ? 'إشعار دائن - مردود مبيعات' : 'إشعار مدين - مردود مشتريات'}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl text-slate-900">
+            <div>
+              <div><span className="font-bold">رقم الإشعار:</span> {activeReturn.returnNumber}</div>
+              <div><span className="font-bold">التاريخ:</span> {activeReturn.date}</div>
+              {activeReturn.originalInvoiceNumber && (
+                <div><span className="font-bold">رقم الفاتورة الأصلية:</span> {activeReturn.originalInvoiceNumber}</div>
+              )}
+            </div>
+            <div>
+              <div><span className="font-bold">الطرف الآخر:</span> {activeReturn.partyName}</div>
+              <div><span className="font-bold">سبب الإرجاع:</span> {activeReturn.reason}</div>
+            </div>
+          </div>
+
+          <table className="w-full text-right border-collapse text-xs text-slate-900">
+            <thead>
+              <tr className="border-b-2 border-slate-900 bg-slate-200">
+                <th className="py-2 px-2">الصنف المرتجع</th>
+                <th className="py-2 px-2 text-center">الكمية</th>
+                <th className="py-2 px-2 text-center">السعر</th>
+                <th className="py-2 px-2 text-center">الإجمالي</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-300">
+              {activeReturn.items.map((it) => (
+                <tr key={it.id}>
+                  <td className="py-2 px-2 font-bold">{it.productName}</td>
+                  <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
+                  <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
+                  <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="border-t-2 border-slate-900 pt-3 flex justify-between text-slate-900">
+            <div className="text-xs text-slate-600">
+              <div>القيد الآلي المرتبط: {activeReturn.journalEntryId || 'مرحل'}</div>
+            </div>
+            <div className="w-48 space-y-1 font-mono-num text-xs">
+              <div className="flex justify-between">
+                <span>المجموع:</span>
+                <span>{activeReturn.subtotal.toFixed(2)} {settings.baseCurrency}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>الضريبة المعكوسة:</span>
+                <span>{activeReturn.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
+              </div>
+              <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
+                <span>الإجمالي المسترجع:</span>
+                <span>{activeReturn.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
+            <span className="font-bold">المبلغ كتابة:</span>{' '}
+            {tafqeet(activeReturn.grandTotal, settings.baseCurrency, 'هللة')}
           </div>
         </div>
       )}

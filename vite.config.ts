@@ -6,22 +6,39 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
+    base: './',
     plugins: [
       react(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+        includeAssets: [
+          'icon.svg',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+          'pwa-monochrome-512x512.png',
+          'pwa-monochrome-192x192.png',
+          'manifest.webmanifest',
+          'manifest.json',
+        ],
         manifest: {
           id: '/',
-          name: 'المحاسب الذكي برو - Smart Accountant Pro',
-          short_name: 'المحاسب الذكي',
-          description: 'نظام محاسبي وإداري عام شامل لجميع الأنشطة والمتاجر يعمل بالكامل بدون اتصال بالإنترنت (Offline)',
+          name: 'الغفاري سوفت PRO',
+          short_name: 'الغفاري PRO',
+          description: 'تطبيق محاسبة متكامل لإدارة نشاطك التجاري، الفواتير، المخزون، ونقاط البيع',
           theme_color: '#020617',
           background_color: '#020617',
           display: 'standalone',
+          display_override: ['standalone', 'window-controls-overlay'],
+          orientation: 'any',
           start_url: '/',
           scope: '/',
+          dir: 'rtl',
+          lang: 'ar',
+          categories: ['business', 'finance', 'productivity'],
+          prefer_related_applications: false,
           icons: [
             {
               src: '/pwa-192x192.png',
@@ -41,9 +58,47 @@ export default defineConfig(() => {
               type: 'image/png',
               purpose: 'maskable',
             },
+            {
+              src: '/pwa-monochrome-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'monochrome',
+            },
+            {
+              src: '/pwa-monochrome-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'monochrome',
+            },
+            {
+              src: '/apple-touch-icon.png',
+              sizes: '180x180',
+              type: 'image/png',
+              purpose: 'any',
+            },
+          ],
+          screenshots: [
+            {
+              src: '/screenshots/screenshot1.jpg',
+              sizes: '720x1600',
+              type: 'image/jpeg',
+              form_factor: 'narrow',
+              label: 'شاشة تطبيق الغفاري سوفت PRO الرئيسية',
+            },
+            {
+              src: '/screenshots/screenshot2.jpg',
+              sizes: '720x1600',
+              type: 'image/jpeg',
+              form_factor: 'narrow',
+              label: 'مركز إعدادات النظام المتقدمة',
+            },
           ],
         },
+        devOptions: {
+          enabled: false,
+        },
         workbox: {
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           runtimeCaching: [
             {
@@ -75,10 +130,6 @@ export default defineConfig(() => {
               },
             },
           ],
-        },
-        devOptions: {
-          enabled: true,
-          type: 'module',
         },
       }),
     ],

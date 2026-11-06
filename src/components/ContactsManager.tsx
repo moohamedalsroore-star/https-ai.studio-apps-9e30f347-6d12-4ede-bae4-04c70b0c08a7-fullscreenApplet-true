@@ -18,10 +18,16 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   MessageSquare,
+  ArrowRight,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { Contact, PaymentMethod } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
+import { DocumentActionsBar } from './DocumentActionsBar';
+import { FreeNumberInput } from './FreeNumberInput';
+import { useBackHandler } from '../hooks/useBackHandler';
+import { exportDebtAgingToExcel } from '../utils/excelExport';
 
 export const ContactsManager: React.FC = () => {
   const {
@@ -47,6 +53,25 @@ export const ContactsManager: React.FC = () => {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [selectedContactHistory, setSelectedContactHistory] = useState<Contact | null>(null);
   const [quickVoucherContact, setQuickVoucherContact] = useState<Contact | null>(null);
+
+  // Android hardware back button and swipe gestures
+  useBackHandler({
+    isOpen: showAddModal,
+    onClose: () => setShowAddModal(false),
+    stateKey: 'contactModal',
+  });
+
+  useBackHandler({
+    isOpen: Boolean(selectedContactHistory),
+    onClose: () => setSelectedContactHistory(null),
+    stateKey: 'contactHistory',
+  });
+
+  useBackHandler({
+    isOpen: Boolean(quickVoucherContact),
+    onClose: () => setQuickVoucherContact(null),
+    stateKey: 'contactQuickVoucher',
+  });
 
   // Contact form
   const [formData, setFormData] = useState({
@@ -219,7 +244,7 @@ export const ContactsManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28 sm:pb-12">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -517,6 +542,28 @@ export const ContactsManager: React.FC = () => {
       {/* DRAWER / MODAL: Contact Transaction History & Ledger */}
       {selectedContactHistory && (() => {
         const { contactInvoices, contactVouchers } = getContactHistory(selectedContactHistory);
+
+        // Onyx Pro Debt Aging Calculation
+        const nowMs = Date.now();
+        let aging0to30 = 0;
+        let aging31to60 = 0;
+        let aging61to90 = 0;
+        let agingOver90 = 0;
+
+        contactInvoices.forEach((inv) => {
+          if (inv.status !== 'PAID') {
+            const remaining = (inv.grandTotal || 0) - (inv.paidAmount || 0);
+            if (remaining > 0) {
+              const invDateMs = new Date(inv.date).getTime();
+              const days = Math.floor((nowMs - invDateMs) / (1000 * 60 * 60 * 24));
+              if (days <= 30) aging0to30 += remaining;
+              else if (days <= 60) aging31to60 += remaining;
+              else if (days <= 90) aging61to90 += remaining;
+              else agingOver90 += remaining;
+            }
+          }
+        });
+
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col printable-card print:border-none print:shadow-none print:max-h-none print:overflow-visible">
@@ -547,14 +594,52 @@ export const ContactsManager: React.FC = () => {
                   )}
 
                   <button
-                    onClick={() => window.print()}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
-                    title="طباعة كشف الحساب أو حفظه بصيغة PDF"
+                    type="button"
+                    onClick={() => {
+                      exportDebtAgingToExcel(
+                        [
+                          {
+                            id: selectedContactHistory.id,
+                            code: selectedContactHistory.code,
+                            name: selectedContactHistory.name,
+                            type: selectedContactHistory.type,
+                            phone: selectedContactHistory.phone,
+                            totalBalance: selectedContactHistory.balance,
+                            current0to30: aging0to30,
+                            days31to60: aging31to60,
+                            days61to90: aging61to90,
+                            daysOver90: agingOver90,
+                          },
+                        ],
+                        settings.companyName,
+                        settings.baseCurrency
+                      );
+                      showToast('تم تصدير كشف الحساب وأعمار الديون إلى ملف Excel (.xlsx) بنجاح ✓', 'success');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-emerald-100 text-xs font-bold border border-emerald-600/40 cursor-pointer transition-all"
+                    title="تصدير كشف الحساب وأعمار الديون إلى Excel"
                   >
-                    <Printer className="w-4 h-4" />
-                    طباعة / حفظ PDF
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300" />
+                    <span className="hidden sm:inline">تصدير Excel</span>
+                  </button>
+
+                  <DocumentActionsBar
+                    targetElementId="contact-statement-content"
+                    filename={`كشف_حساب_${selectedContactHistory.name}`}
+                    documentTitle={`كشف حساب ${selectedContactHistory.name}`}
+                    hasData={contactInvoices.length > 0 || contactVouchers.length > 0 || selectedContactHistory.balance !== 0}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedContactHistory(null)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold border border-slate-600 cursor-pointer transition-all active:scale-95"
+                    title="الرجوع إلى قائمة الحسابات"
+                  >
+                    <ArrowRight className="w-4 h-4 text-emerald-400" />
+                    <span>رجوع</span>
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSelectedContactHistory(null)}
                     className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
                   >
@@ -563,7 +648,8 @@ export const ContactsManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Print-Only Official Document Header */}
+              <div id="contact-statement-content" className="space-y-4">
+                {/* Print-Only Official Document Header */}
               <div className="p-6 text-center border-b-2 border-slate-900 pb-3 hidden print:block text-black">
                 <h2 className="text-xl font-black">{settings.companyName}</h2>
                 <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
@@ -595,6 +681,45 @@ export const ContactsManager: React.FC = () => {
                   <div className="font-mono-num font-extrabold text-amber-400 text-base mt-1">
                     {selectedContactHistory.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
                     <span className="text-xs font-normal text-slate-400">{settings.baseCurrency}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Onyx Pro: Debt Aging Breakdown (تحليل أعمار الديون) */}
+              <div className="p-4 bg-slate-900/90 border-b border-slate-800">
+                <div className="text-xs font-bold text-slate-300 mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                    تحليل أعمار الديون والمطالبات (نظام أونكس برو)
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono-num">
+                    إجمالي الديون القائمة: {selectedContactHistory.balance.toFixed(2)} {settings.baseCurrency}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-slate-400 font-medium">1 - 30 يوماً (حالي)</div>
+                    <div className="font-mono-num font-bold text-emerald-400 mt-1">
+                      {aging0to30.toFixed(2)} {settings.baseCurrency}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-slate-400 font-medium">31 - 60 يوماً</div>
+                    <div className="font-mono-num font-bold text-amber-300 mt-1">
+                      {aging31to60.toFixed(2)} {settings.baseCurrency}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-slate-400 font-medium">61 - 90 يوماً</div>
+                    <div className="font-mono-num font-bold text-amber-400 mt-1">
+                      {aging61to90.toFixed(2)} {settings.baseCurrency}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-slate-400 font-medium">أكثر من 90 يوماً (متعثر)</div>
+                    <div className="font-mono-num font-bold text-rose-400 mt-1">
+                      {agingOver90.toFixed(2)} {settings.baseCurrency}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -710,29 +835,41 @@ export const ContactsManager: React.FC = () => {
               </div>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      );
+    })()}
 
       {/* MODAL 1: Add / Edit Contact */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="p-4 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+            <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Users className="w-5 h-5 text-emerald-400" />
                 {editingContact
                   ? `تعديل بيانات ${formData.type === 'CUSTOMER' ? 'العميل' : 'المورد'}`
                   : `إضافة ${formData.type === 'CUSTOMER' ? 'عميل' : 'مورد'} جديد`}
               </h3>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold border border-slate-700 cursor-pointer transition-all active:scale-95 shadow-sm"
+                  title="الرجوع إلى الخلف"
+                >
+                  <ArrowRight className="w-4 h-4 text-emerald-400" />
+                  <span>رجوع للخلف</span>
+                </button>
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="text-slate-400 hover:text-white text-xl font-bold p-1 cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveContact} className="p-5 space-y-4">
+            <form onSubmit={handleSaveContact} className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">الكود</label>
@@ -810,12 +947,11 @@ export const ContactsManager: React.FC = () => {
                   <label className="block text-xs font-bold text-purple-400 mb-1">
                     الحد الائتماني المسموح به ({settings.baseCurrency})
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <FreeNumberInput
                     value={formData.creditLimit}
-                    onChange={(e) => setFormData({ ...formData, creditLimit: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-purple-300 font-mono-num font-bold"
+                    onChange={(val) => setFormData({ ...formData, creditLimit: val })}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-purple-300 font-bold"
                   />
                 </div>
               </div>

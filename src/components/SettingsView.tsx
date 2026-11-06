@@ -1,475 +1,683 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  Settings,
-  Building,
-  Save,
-  Download,
-  Upload,
-  RotateCcw,
-  Calendar,
-  Lock,
-  CheckCircle,
-  AlertTriangle,
+  Printer,
+  FileText,
+  Building2,
   Coins,
-  ShieldAlert,
+  Boxes,
+  Users,
+  Database,
+  FileSpreadsheet,
+  Palette,
+  Wrench,
+  Search,
   Sparkles,
-  X,
+  ShieldCheck,
+  ChevronLeft,
+  ArrowRight,
+  ChevronRight,
+  Sliders,
+  CheckCircle2,
+  Layers,
+  LayoutGrid,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
+import { PrintSettingsTab } from './settings/PrintSettingsTab';
+import { DocumentTemplatesTab } from './settings/DocumentTemplatesTab';
+import { OrganizationInfoTab } from './settings/OrganizationInfoTab';
+import { AccountingSettingsTab } from './settings/AccountingSettingsTab';
+import { InventorySettingsTab } from './settings/InventorySettingsTab';
+import { UsersPermissionsTab } from './settings/UsersPermissionsTab';
+import { BackupRestoreTab } from './settings/BackupRestoreTab';
+import { ReportsSettingsTab } from './settings/ReportsSettingsTab';
+import { AppearanceNotificationsTab } from './settings/AppearanceNotificationsTab';
+import { SystemMaintenanceTab } from './settings/SystemMaintenanceTab';
+import { useBackHandler } from '../hooks/useBackHandler';
+
+type SettingsTabKey =
+  | 'print'
+  | 'documents'
+  | 'organization'
+  | 'accounting'
+  | 'inventory'
+  | 'users'
+  | 'backup'
+  | 'reports'
+  | 'appearance'
+  | 'maintenance';
+
+interface SettingCardItem {
+  id: SettingsTabKey;
+  number: number;
+  title: string;
+  subtitle: string;
+  icon: React.ElementType;
+  badge?: string;
+  keywords: string[];
+}
+
+const SETTING_CARDS: SettingCardItem[] = [
+  {
+    id: 'print',
+    number: 1,
+    title: 'إعدادات الطباعة',
+    subtitle: 'اختيار الطابعات، أحجام A4 وA5 والإيصالات الحرارية 58 و80 مم، الهوامش، وحفظ الـ PDF',
+    icon: Printer,
+    badge: 'طابعات وPDF',
+    keywords: ['طباعة', 'طابعة', 'ورق', 'a4', 'a5', 'حراري', 'إيصال', 'هوامش', 'خط', 'pdf'],
+  },
+  {
+    id: 'documents',
+    number: 2,
+    title: 'إعدادات المستندات والقوالب',
+    subtitle: 'تخصيص قوالب فواتير البيع والشراء والسندات، الترقيم التلقائي والبادئات، والختم والتوقيع',
+    icon: FileText,
+    badge: 'قوالب وترقيم',
+    keywords: ['فواتير', 'مستندات', 'ترقيم', 'سندات', 'قبض', 'صرف', 'عروض', 'توقيع', 'ختم', 'بادئة'],
+  },
+  {
+    id: 'organization',
+    number: 3,
+    title: 'بيانات المؤسسة والنشاط',
+    subtitle: 'اسم المنشأة، الشعار، السجل التجاري، الرقم الضريبي، العملة الافتراضية، والسنة المالية',
+    icon: Building2,
+    badge: 'الهوية والضريبة',
+    keywords: ['مؤسسة', 'شركة', 'اسم', 'شعار', 'سجل تجاري', 'رقم ضريبي', 'ضريبة', 'عملة', 'عنوان', 'هاتف'],
+  },
+  {
+    id: 'accounting',
+    number: 4,
+    title: 'إعدادات المحاسبة والقيود',
+    subtitle: 'الحسابات الافتراضية، الصندوق، العملاء، الموردون، المبيعات والمشتريات، والتقريب والقيود',
+    icon: Coins,
+    badge: 'شجرة الحسابات',
+    keywords: ['محاسبة', 'صندوق', 'بنك', 'عملاء', 'موردين', 'مبيعات', 'مشتريات', 'خصم', 'تقريب', 'قيود'],
+  },
+  {
+    id: 'inventory',
+    number: 5,
+    title: 'إعدادات المخزون والمستودعات',
+    subtitle: 'المستودع الافتراضي، طرق التسعير FIFO والمتوسط، حد التنبيه، وسياسة البيع عند النفاد',
+    icon: Boxes,
+    badge: 'المستودعات والتسعير',
+    keywords: ['مخزون', 'مستودع', 'تسعير', 'fifo', 'متوسط', 'تنبيه', 'نفاد', 'كمية', 'بضاعة'],
+  },
+  {
+    id: 'users',
+    number: 6,
+    title: 'الأمان والمستخدمون والصلاحيات',
+    subtitle: 'إدارة المستخدمين، كلمات المرور ورمز PIN، مصفوفة الصلاحيات، وسجل العمليات المحاسبية',
+    icon: ShieldCheck,
+    badge: 'أدوار وPIN',
+    keywords: ['مستخدمين', 'صلاحيات', 'مدير', 'كاشير', 'محاسب', 'pin', 'رمز', 'سجل', 'أمان'],
+  },
+  {
+    id: 'backup',
+    number: 7,
+    title: 'النسخ الاحتياطي وقاعدة البيانات',
+    subtitle: 'حفظ واستعادة النسخ الاحتياطية JSON، التحقق من السلامة، نسخة الأمان، والتصفير الشامل',
+    icon: Database,
+    badge: 'حفظ واستعادة',
+    keywords: ['نسخ', 'احتياطي', 'استعادة', 'تصدير', 'استيراد', 'قاعدة بيانات', 'حجم', 'تصفير', 'أمان'],
+  },
+  {
+    id: 'reports',
+    number: 8,
+    title: 'التقارير والتصدير المالي',
+    subtitle: 'الفترات الافتراضية، تخصيص الأعمدة، وتصدير إكسل Excel وPDF الحقيقي المباشر',
+    icon: FileSpreadsheet,
+    badge: 'Excel & PDF',
+    keywords: ['تقارير', 'إكسل', 'excel', 'xlsx', 'pdf', 'تصدير', 'أعمدة', 'أرباح', 'ميزانية', 'كشف'],
+  },
+  {
+    id: 'appearance',
+    number: 9,
+    title: 'المظهر والتنبيهات والأصوات',
+    subtitle: 'الوضع الداكن والفاتح، حجم الخط، تنسيق التاريخ، وتنبيهات الديون والنواقص والمؤثرات',
+    icon: Palette,
+    badge: 'الثيم والأصوات',
+    keywords: ['مظهر', 'ثيم', 'داكن', 'فاتح', 'خط', 'تاريخ', 'تنبيهات', 'أصوات', 'كاشير', 'ديون'],
+  },
+  {
+    id: 'maintenance',
+    number: 10,
+    title: 'النظام والصيانة والدعم الفني',
+    subtitle: 'فحص توازن القيود، تحسين الأداء، تفريغ الكاش بأمان، والترخيص الرسمي والدعم',
+    icon: Wrench,
+    badge: 'فحص وتراخيص',
+    keywords: ['صيانة', 'فحص', 'توازن', 'أداء', 'كاش', 'إصدار', 'ترخيص', 'دعم فني', 'تحديث'],
+  },
+];
+
+// Grouped view representation matching the user's screenshot
+interface GroupedCardItem {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: React.ElementType;
+  defaultTab: SettingsTabKey;
+  subTabs: { id: SettingsTabKey; label: string }[];
+}
+
+const GROUPED_CARDS: GroupedCardItem[] = [
+  {
+    id: 'grp-print',
+    title: 'الطباعة والمستندات',
+    subtitle: 'الطابعات، الفواتير، القوالب، الترقيم',
+    icon: Printer,
+    defaultTab: 'print',
+    subTabs: [
+      { id: 'print', label: 'إعدادات الطباعة' },
+      { id: 'documents', label: 'إعدادات المستندات والقوالب' },
+    ],
+  },
+  {
+    id: 'grp-org',
+    title: 'المؤسسة والحسابات',
+    subtitle: 'العملة، السنة المالية، الضرائب، الحسابات، المخزون',
+    icon: Building2,
+    defaultTab: 'organization',
+    subTabs: [
+      { id: 'organization', label: 'بيانات المؤسسة' },
+      { id: 'accounting', label: 'إعدادات المحاسبة' },
+      { id: 'inventory', label: 'إعدادات المخزون' },
+    ],
+  },
+  {
+    id: 'grp-backup',
+    title: 'النسخ الاحتياطي والبيانات',
+    subtitle: 'حفظ، استعادة، استيراد وتصدير، تصفير النظام',
+    icon: Database,
+    defaultTab: 'backup',
+    subTabs: [{ id: 'backup', label: 'النسخ الاحتياطي وقاعدة البيانات' }],
+  },
+  {
+    id: 'grp-security',
+    title: 'الأمان والصلاحيات',
+    subtitle: 'المستخدمون، كلمات المرور، رمز PIN، سجل العمليات',
+    icon: ShieldCheck,
+    defaultTab: 'users',
+    subTabs: [{ id: 'users', label: 'المستخدمون والصلاحيات' }],
+  },
+  {
+    id: 'grp-system',
+    title: 'التقارير والمظهر والنظام',
+    subtitle: 'التقارير، التنبيهات، الأداء، معلومات التطبيق والصيانة',
+    icon: Sliders,
+    defaultTab: 'reports',
+    subTabs: [
+      { id: 'reports', label: 'التقارير والتصدير' },
+      { id: 'appearance', label: 'المظهر والتنبيهات' },
+      { id: 'maintenance', label: 'النظام والصيانة' },
+    ],
+  },
+];
 
 export const SettingsView: React.FC = () => {
   const {
     settings,
     updateSettings,
-    radicalFactoryReset,
+    currencies,
+    accounts,
+    warehouses,
+    invoices,
+    products,
+    contacts,
+    vouchers,
+    journalEntries,
     exportDatabaseJson,
     importDatabaseJson,
-    accounts,
-    journalEntries,
-    openDeleteConfirm,
+    radicalFactoryReset,
     showToast,
   } = useAccounting();
 
-  // Security phrase modal for radical factory reset
-  const [showResetSecurityModal, setShowResetSecurityModal] = useState(false);
-  const [confirmationPhrase, setConfirmationPhrase] = useState('');
+  // Active subpage (null means user is looking at the Cards Hub overview)
+  const [selectedSection, setSelectedSection] = useState<SettingsTabKey | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grouped' | 'detailed'>('grouped');
 
-  const [form, setForm] = useState({
-    companyName: settings.companyName,
-    companyNameEn: settings.companyNameEn,
-    businessSector: settings.businessSector || 'GENERAL',
-    taxNumber: settings.taxNumber,
-    commercialRecord: settings.commercialRecord,
-    phone: settings.phone,
-    address: settings.address,
-    baseCurrency: settings.baseCurrency,
-    fiscalYear: settings.fiscalYear,
-    taxEnabled: settings.taxEnabled !== false,
-    defaultTaxRate: settings.defaultTaxRate,
-    invoiceFooterNotes: settings.invoiceFooterNotes || 'شكراً لتعاملكم معنا. البضاعة المباعة ترد وتستبدل خلال المدة المحددة نظاماً.',
+  // Android hardware back button returns to cards hub
+  useBackHandler({
+    isOpen: Boolean(selectedSection),
+    onClose: () => setSelectedSection(null),
+    stateKey: 'settingsSection',
   });
 
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [importStatus, setImportStatus] = useState<string | null>(null);
+  // Filter cards by search
+  const filteredCards = useMemo(() => {
+    if (!searchQuery.trim()) return SETTING_CARDS;
+    const q = searchQuery.toLowerCase().trim();
+    return SETTING_CARDS.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.subtitle.toLowerCase().includes(q) ||
+        c.keywords.some((k) => k.includes(q))
+    );
+  }, [searchQuery]);
 
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateSettings(form);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+  const filteredGroupedCards = useMemo(() => {
+    if (!searchQuery.trim()) return GROUPED_CARDS;
+    const q = searchQuery.toLowerCase().trim();
+    return GROUPED_CARDS.filter(
+      (g) =>
+        g.title.toLowerCase().includes(q) ||
+        g.subtitle.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
+
+  const activeCardInfo = useMemo(() => {
+    if (!selectedSection) return null;
+    return SETTING_CARDS.find((c) => c.id === selectedSection) || SETTING_CARDS[0];
+  }, [selectedSection]);
+
+  // Handle opening a card
+  const handleOpenSection = (tabKey: SettingsTabKey) => {
+    setSelectedSection(tabKey);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleDownloadBackup = () => {
-    const jsonStr = exportDatabaseJson();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `smart_accountant_pro_backup_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+  // Handle navigating back to cards hub
+  const handleBackToHub = () => {
+    setSelectedSection(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // If a subpage is opened, render the clean focused dedicated view
+  if (selectedSection && activeCardInfo) {
+    const Icon = activeCardInfo.icon;
+    const currentIndex = SETTING_CARDS.findIndex((c) => c.id === selectedSection);
+    const prevSection = currentIndex > 0 ? SETTING_CARDS[currentIndex - 1] : null;
+    const nextSection = currentIndex < SETTING_CARDS.length - 1 ? SETTING_CARDS[currentIndex + 1] : null;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        const ok = importDatabaseJson(content);
-        if (ok) {
-          setImportStatus('تمت استعادة النسخة الاحتياطية بنجاح!');
-          setTimeout(() => window.location.reload(), 1500);
-        } else {
-          setImportStatus('خطأ: الملف غير صالح أو تالف.');
-        }
-      }
-    };
-    reader.readAsText(file);
-  };
+    return (
+      <div className="space-y-6 pb-20 max-w-5xl mx-auto animate-in fade-in duration-200">
+        {/* Top Return & Header Bar */}
+        <div className="rounded-3xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/40 p-5 md:p-6 shadow-2xl shadow-amber-950/20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            {/* Back Button */}
+            <button
+              type="button"
+              onClick={handleBackToHub}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm shadow-lg shadow-amber-500/20 cursor-pointer transition-all active:scale-95 group w-fit"
+            >
+              <ArrowRight className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+              <span>العودة لجميع بطاقات الإعدادات</span>
+            </button>
 
-  return (
-    <div className="space-y-6 max-w-4xl mx-auto">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-black text-white flex items-center gap-2">
-          <Settings className="w-7 h-7 text-emerald-400" />
-          إعدادات النظام والتصفير الشامل والنسخ الاحتياطي
-        </h2>
-        <p className="text-sm text-slate-400">
-          تخصيص بيانات المنشأة، الرقم الضريبي، العملة الافتراضية، وإدارة قواعد البيانات والتصفير الجذري
-        </p>
-      </div>
-
-      {saveSuccess && (
-        <div className="p-4 rounded-2xl bg-emerald-950/50 border border-emerald-500/40 text-emerald-300 text-sm font-bold flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-emerald-400" />
-          تم حفظ الإعدادات بنجاح وتحديث كافة الفواتير والتقارير تلقائياً!
-        </div>
-      )}
-
-      {/* Radical Factory Reset Card (Requested by User) */}
-      <div className="p-6 rounded-3xl bg-red-950/20 border-2 border-red-500/40 shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold text-red-400 text-base flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-red-400" />
-            التصفير الجذري الشامل للنظام (Factory Reset)
-          </h3>
-          <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-300 text-xs font-bold border border-red-500/30">
-            تصفير كامل للصفر
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-300 leading-relaxed">
-          هذا الخيار يقوم بمسح جميع العملاء، الموردين، المخازن، الأصناف، الفواتير، عروض الأسعار، المردودات، التحويلات، القيود اليومية، والأسناد وتصفير كافة الأرصدة في دليل الحسابات إلى الصفر تماماً (0.00)، ليصبح النظام فارغاً ونظيفاً تماماً وجاهزاً لإدخال بيانات عملك الحقيقية.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <button
-            onClick={() => {
-              setConfirmationPhrase('');
-              setShowResetSecurityModal(true);
-            }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black text-xs cursor-pointer shadow-lg shadow-red-600/30 transition-all active:scale-95"
-          >
-            <RotateCcw className="w-4 h-4" />
-            تنفيذ التصفير الجذري الشامل الآن
-          </button>
-        </div>
-      </div>
-
-      {/* Security Modal requiring typing "الغفاري سوفت برو" for Radical Factory Reset */}
-      {showResetSecurityModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="bg-slate-900 border-2 border-red-500/60 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden p-6 text-right space-y-5">
-            <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
-              <div className="w-12 h-12 rounded-2xl bg-red-600/20 border border-red-500/50 flex items-center justify-center text-red-400 shrink-0">
-                <AlertTriangle className="w-6 h-6 animate-pulse" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-black text-lg text-white">تأكيد الحذف والتصفير الجذري الشامل</h3>
-                <p className="text-xs text-red-400 font-bold mt-0.5">عملية تصفير حاسمة لكافة بيانات النظام</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowResetSecurityModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            {/* Quick Breadcrumb & Step Indicator */}
+            <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+              <span className="text-amber-400 font-bold">مركز الإعدادات</span>
+              <span>/</span>
+              <span className="text-white font-bold">{activeCardInfo.title}</span>
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-400 font-bold border border-slate-700 text-[11px]">
+                {activeCardInfo.number} من 10
+              </span>
             </div>
+          </div>
 
-            <div className="p-4 rounded-2xl bg-red-950/30 border border-red-900/50 space-y-2 text-xs text-slate-300">
-              <p className="font-bold text-red-300">⚠️ تنبيه أمني شديد الأهمية:</p>
-              <p>
-                سيتم مسح كافة الفواتير، الأصناف، المخازن، الفروع، العملاء، الموردين، القيود، والأسناد وتصفير دليل الحسابات كاملاً إلى الصفر (0.00).
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-300">
-                لتأكيد الحذف الشامل، يرجى كتابة اسم النظام التالي بدقة:
-              </label>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center font-black text-amber-400 text-lg tracking-wider select-all shadow-inner">
-                الغفاري سوفت برو
+          {/* Subpage Header Title with Icon */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-slate-950 border-2 border-amber-500/40 flex items-center justify-center text-amber-400 shadow-md shadow-amber-500/10 shrink-0">
+                <Icon className="w-7 h-7 text-amber-400" />
               </div>
-              <input
-                type="text"
-                value={confirmationPhrase}
-                onChange={(e) => setConfirmationPhrase(e.target.value)}
-                placeholder="اكتب هنا: الغفاري سوفت برو"
-                className="w-full px-4 py-3 bg-slate-800 border-2 border-slate-700 focus:border-red-500 rounded-xl text-center font-bold text-white text-base focus:outline-none transition-colors"
-                autoFocus
-              />
-              {confirmationPhrase.trim().length > 0 && confirmationPhrase.trim() !== 'الغفاري سوفت برو' && (
-                <p className="text-[11px] text-amber-400 text-center font-medium">
-                  يجب كتابة: (الغفاري سوفت برو) تماماً لتفعيل زر التأكيد
+              <div>
+                <h1 className="text-xl md:text-2xl font-black text-white">
+                  {activeCardInfo.title}
+                </h1>
+                <p className="text-xs md:text-sm text-slate-300 mt-0.5 leading-relaxed">
+                  {activeCardInfo.subtitle}
                 </p>
+              </div>
+            </div>
+
+            {/* Fast Next / Prev Navigation */}
+            <div className="flex items-center gap-2 shrink-0">
+              {prevSection && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenSection(prevSection.id)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition-colors"
+                  title={prevSection.title}
+                >
+                  <ChevronRight className="w-4 h-4 text-amber-400" />
+                  <span className="hidden md:inline">السابق: {prevSection.title.slice(0, 14)}...</span>
+                  <span className="md:hidden">السابق</span>
+                </button>
+              )}
+              {nextSection && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenSection(nextSection.id)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition-colors"
+                  title={nextSection.title}
+                >
+                  <span className="hidden md:inline">التالي: {nextSection.title.slice(0, 14)}...</span>
+                  <span className="md:hidden">التالي</span>
+                  <ChevronLeft className="w-4 h-4 text-amber-400" />
+                </button>
               )}
             </div>
+          </div>
+        </div>
 
-            <div className="pt-2 flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                disabled={confirmationPhrase.trim() !== 'الغفاري سوفت برو'}
-                onClick={() => {
-                  if (confirmationPhrase.trim() === 'الغفاري سوفت برو') {
-                    radicalFactoryReset();
-                    setShowResetSecurityModal(false);
-                    showToast('تم تنفيذ التصفير الجذري الشامل وإعادة النظام لحالة المصنع النقية بنجاح ✓', 'success');
-                  }
-                }}
-                className={`flex-1 py-3 px-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  confirmationPhrase.trim() === 'الغفاري سوفت برو'
-                    ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/40 active:scale-95'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700 opacity-60'
-                }`}
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>تأكيد التصفير الجذري الشامل الآن</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowResetSecurityModal(false)}
-                className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm cursor-pointer transition-colors"
-              >
-                إلغاء الأمر
-              </button>
+        {/* Focused Subpage Tab Content - No Clutter */}
+        <div className="bg-slate-950/60 rounded-3xl p-1 md:p-2 border border-slate-800">
+          {selectedSection === 'print' && (
+            <PrintSettingsTab
+              initialSettings={settings.printSettings}
+              onSave={(newPrint) => updateSettings({ printSettings: newPrint })}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'documents' && (
+            <DocumentTemplatesTab
+              initialTemplates={settings.documentTemplates}
+              onSave={(newTemplates) => updateSettings({ documentTemplates: newTemplates })}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'organization' && (
+            <OrganizationInfoTab
+              settings={settings}
+              currencies={currencies}
+              onSave={(updates) => updateSettings(updates)}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'accounting' && (
+            <AccountingSettingsTab
+              initialConfig={settings.accountingConfig}
+              accounts={accounts}
+              onSave={(newAccConfig) => updateSettings({ accountingConfig: newAccConfig })}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'inventory' && (
+            <InventorySettingsTab
+              initialConfig={settings.inventoryConfig}
+              warehouses={warehouses}
+              onSave={(newInvConfig) => updateSettings({ inventoryConfig: newInvConfig })}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'users' && <UsersPermissionsTab showToast={showToast} />}
+
+          {selectedSection === 'backup' && (
+            <BackupRestoreTab
+              exportDatabaseJson={exportDatabaseJson}
+              importDatabaseJson={importDatabaseJson}
+              radicalFactoryReset={radicalFactoryReset}
+              accounts={accounts}
+              invoices={invoices}
+              products={products}
+              contacts={contacts}
+              vouchers={vouchers}
+              journalEntries={journalEntries}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'reports' && (
+            <ReportsSettingsTab
+              initialConfig={settings.reportConfig}
+              accounts={accounts}
+              invoices={invoices}
+              products={products}
+              contacts={contacts}
+              baseCurrency={settings.baseCurrency}
+              onSave={(newRepConfig) => updateSettings({ reportConfig: newRepConfig })}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'appearance' && (
+            <AppearanceNotificationsTab
+              initialConfig={settings.appearanceConfig}
+              onSave={(newAppConfig) => updateSettings({ appearanceConfig: newAppConfig })}
+              showToast={showToast}
+            />
+          )}
+
+          {selectedSection === 'maintenance' && (
+            <SystemMaintenanceTab
+              accounts={accounts}
+              journalEntries={journalEntries}
+              showToast={showToast}
+            />
+          )}
+        </div>
+
+        {/* Bottom Back Button Bar */}
+        <div className="flex justify-center pt-4">
+          <button
+            type="button"
+            onClick={handleBackToHub}
+            className="inline-flex items-center gap-2 px-8 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-amber-400 font-black text-sm border-2 border-amber-500/40 shadow-xl transition-all cursor-pointer active:scale-95"
+          >
+            <ArrowRight className="w-4 h-4" />
+            <span>العودة لجميع بطاقات الإعدادات</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Cards Hub Overview (Exact Match to User's Screenshot Design)
+  return (
+    <div className="space-y-6 pb-20 max-w-4xl mx-auto animate-in fade-in duration-200">
+      {/* Header Banner */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/30 p-6 md:p-8 shadow-2xl shadow-amber-950/20">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-amber-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-72 h-72 bg-amber-600/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-500/10 border border-amber-500/40 text-amber-400">
+                <Sparkles className="w-3.5 h-3.5" />
+                مركز إعدادات النظام
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                نظام أوفلاين 100%
+              </span>
+            </div>
+
+            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-2">
+              <span>إعدادات</span>
+              <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+                «الغفاري سوفت PRO»
+              </span>
+            </h1>
+
+            <p className="text-xs md:text-sm text-slate-300 leading-relaxed max-w-2xl">
+              اختر أي بطاقة من القائمة أدناه لفتح شاشة إعداداتها المستقلة وتخصيص الطباعة، الفواتير، بيانات المؤسسة، المحاسبة، والمخزون بدون أي ازدحام.
+            </p>
+          </div>
+
+          {/* Quick Search Input */}
+          <div className="w-full md:w-72 shrink-0">
+            <div className="relative">
+              <Search className="w-4 h-4 text-amber-400/80 absolute right-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ابحث في الإعدادات..."
+                className="w-full pr-10 pl-4 py-2.5 rounded-2xl bg-slate-900/90 border border-amber-500/40 focus:border-amber-400 text-xs md:text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 shadow-inner"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
+                >
+                  مسح
+                </button>
+              )}
             </div>
           </div>
         </div>
-      )}
-
-      {/* Company Profile Form */}
-      <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-6">
-        <h3 className="font-bold text-white text-base flex items-center gap-2 border-b border-slate-800 pb-3">
-          <Building className="w-5 h-5 text-emerald-400" />
-          بيانات المنشأة والترخيص التجاري والضريبي
-        </h3>
-
-        <form onSubmit={handleSaveSettings} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-emerald-400 mb-1">
-                تصنيف ونوع النشاط التجاري (Activity Sector)
-              </label>
-              <select
-                value={form.businessSector}
-                onChange={(e) => setForm({ ...form, businessSector: e.target.value as any })}
-                className="w-full px-3 py-2 bg-slate-800 border border-emerald-500/40 rounded-xl text-sm text-white font-bold"
-              >
-                <option value="GENERAL">🏢 عام لجميع الأنشطة والمؤسسات (General Business & Services)</option>
-                <option value="RETAIL">🏪 تموينات وسوبرماركت ومحلات تجزئة (Retail & Groceries)</option>
-                <option value="WHOLESALE">📦 تجارة جملة وتوزيع ومستودعات (Wholesale & Distribution)</option>
-                <option value="RESTAURANT">☕ كافيه ومطعم ومخبز (Cafes, Restaurants & Bakeries)</option>
-                <option value="SERVICES">💼 خدمات واستشارات وصيانة وتقنية (Services & Consulting)</option>
-                <option value="CONTRACTING">🛠️ مقاولات وورش وتشطيبات وإنشاءات (Contracting & Workshops)</option>
-                <option value="PERSONAL">👤 حسابات شخصية وإدارة ديون الأفراد (Personal Debts & Ledger)</option>
-                <option value="PHARMACY">💊 صيدليات ومستلزمات ومراكز طبية (Pharmacies & Medical)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                اسم المنشأة أو الشركة (يظهر في ترويسة الفواتير والتقارير)
-              </label>
-              <input
-                type="text"
-                required
-                value={form.companyName}
-                onChange={(e) => setForm({ ...form, companyName: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-bold"
-              />
-              <p className="text-[11px] text-slate-400 mt-1 font-medium">
-                اسم المنشأة المطبوع على الفواتير والسندات (شعار واسم نظام الغفاري سوفت برو ثابت رسمياً كشعار للنظام)
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                اسم المنشأة بالإنجليزية (اختياري)
-              </label>
-              <input
-                type="text"
-                value={form.companyNameEn}
-                onChange={(e) => setForm({ ...form, companyNameEn: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-sans text-left"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                رقم السجل التجاري
-              </label>
-              <input
-                type="text"
-                value={form.commercialRecord}
-                onChange={(e) => setForm({ ...form, commercialRecord: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono-num"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                الرقم الضريبي للمنشأة (VAT ID)
-              </label>
-              <input
-                type="text"
-                value={form.taxNumber}
-                onChange={(e) => setForm({ ...form, taxNumber: e.target.value })}
-                placeholder="أدخل الرقم الضريبي أو اتركه فارغاً إذا كنت معفياً"
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono-num"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">رقم الهاتف والتواصل</label>
-              <input
-                type="text"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono-num"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">العنوان والمقر</label>
-            <input
-              type="text"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white"
-            />
-          </div>
-
-          {/* Tax Mode Toggle */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-800/40 border border-slate-700">
-            <div>
-              <label className="block text-xs font-bold text-slate-200 mb-2">
-                حالة ضريبة القيمة المضافة (VAT Status)
-              </label>
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex items-center gap-2 text-xs text-white font-bold cursor-pointer">
-                  <input
-                    type="radio"
-                    name="taxEnabled"
-                    checked={form.taxEnabled === true}
-                    onChange={() => setForm({ ...form, taxEnabled: true, defaultTaxRate: 0.15 })}
-                    className="text-emerald-500 focus:ring-0 w-4 h-4 cursor-pointer"
-                  />
-                  <span>خاضع للضريبة (15%)</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-300 font-bold cursor-pointer">
-                  <input
-                    type="radio"
-                    name="taxEnabled"
-                    checked={form.taxEnabled === false}
-                    onChange={() => setForm({ ...form, taxEnabled: false, defaultTaxRate: 0 })}
-                    className="text-emerald-500 focus:ring-0 w-4 h-4 cursor-pointer"
-                  />
-                  <span>معفى / غير مسجل (0% فواتير مبسطة)</span>
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                نسبة الضريبة المفعلة
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                disabled={!form.taxEnabled}
-                value={form.defaultTaxRate}
-                onChange={(e) => setForm({ ...form, defaultTaxRate: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono-num font-bold disabled:opacity-40"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-800/40 border border-slate-700">
-            <div>
-              <label className="block text-xs font-bold text-emerald-400 mb-1">
-                العملة المحاسبية الأساسية للنظام
-              </label>
-              <select
-                value={form.baseCurrency}
-                onChange={(e) => setForm({ ...form, baseCurrency: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-bold"
-              >
-                <option value="SAR">ريال سعودي (SAR)</option>
-                <option value="USD">دولار أمريكي (USD)</option>
-                <option value="YER">ريال يمني (YER)</option>
-                <option value="AED">درهم إماراتي (AED)</option>
-                <option value="EGP">جنيه مصري (EGP)</option>
-                <option value="KWD">دينار كويتي (KWD)</option>
-                <option value="JOD">دينار أردني (JOD)</option>
-                <option value="EUR">يورو (EUR)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                السنة المالية الحالية
-              </label>
-              <input
-                type="text"
-                value={form.fiscalYear}
-                onChange={(e) => setForm({ ...form, fiscalYear: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono-num font-bold"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
-              ملاحظات وتذييل الفواتير وعروض الأسعار (شروط الاسترجاع والضمان)
-            </label>
-            <textarea
-              rows={2}
-              value={form.invoiceFooterNotes}
-              onChange={(e) => setForm({ ...form, invoiceFooterNotes: e.target.value })}
-              placeholder="مثال: شكراً لتعاملكم معنا. البضاعة المباعة ترد وتستبدل خلال 3 أيام مع أصل الفاتورة."
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white"
-            />
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 cursor-pointer transition-all"
-            >
-              <Save className="w-4 h-4" />
-              حفظ بيانات وتفضيلات المنشأة
-            </button>
-          </div>
-        </form>
       </div>
 
-      {/* Database Backup & Restore */}
-      <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-        <h3 className="font-bold text-white text-base flex items-center gap-2 border-b border-slate-800 pb-3">
-          <Download className="w-5 h-5 text-cyan-400" />
-          النسخ الاحتياطي واستعادة البيانات (JSON Backup & Restore)
-        </h3>
+      {/* Mode Switcher Toggle: Grouped (كما في الصورة المرفقة) vs Detailed (10 أقسام تفصيلية) */}
+      <div className="flex items-center justify-between px-2">
+        <span className="text-xs font-bold text-slate-300">طريقة عرض البطاقات:</span>
+        <div className="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+          <button
+            type="button"
+            onClick={() => setViewMode('grouped')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              viewMode === 'grouped'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>بطاقات رئيسية مجمعة (كما بالصورة)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('detailed')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              viewMode === 'detailed'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>بطاقات تفصيلية (10 أقسام)</span>
+          </button>
+        </div>
+      </div>
 
-        <p className="text-xs text-slate-400 leading-relaxed">
-          يمكنك تصدير قاعدة بيانات النظام بالكامل إلى ملف خارجي، واستعادتها في أي لحظة.
-        </p>
+      {/* Cards List Container - Sleek Pure Black Luxury Look Matching User's Attached Screenshot */}
+      <div className="rounded-3xl bg-slate-950 border-2 border-slate-800/90 p-4 md:p-6 shadow-2xl space-y-3">
+        {viewMode === 'grouped' ? (
+          // Grouped Cards (Exact Replica of the User's Attached Screenshot)
+          filteredGroupedCards.map((group) => {
+            const Icon = group.icon;
 
-        {importStatus && (
-          <div className="p-3 rounded-xl bg-slate-800 text-xs font-bold text-cyan-300">
-            {importStatus}
-          </div>
+            return (
+              <div
+                key={group.id}
+                className="group w-full flex items-center justify-between p-4 md:p-5 rounded-2xl bg-[#0b0f17] hover:bg-[#111726] border border-slate-800/80 hover:border-amber-500/50 transition-all duration-200 cursor-pointer shadow-md hover:shadow-amber-500/10 active:scale-[0.99]"
+                onClick={() => handleOpenSection(group.defaultTab)}
+              >
+                {/* Left: Chevron Arrow */}
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-slate-500 group-hover:text-amber-400 group-hover:-translate-x-1 transition-all shrink-0">
+                  <ChevronLeft className="w-5 h-5" />
+                </div>
+
+                {/* Middle: Title & Subtitle */}
+                <div className="flex-1 px-4 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <h3 className="text-white font-black text-base md:text-lg group-hover:text-amber-300 transition-colors">
+                      {group.title}
+                    </h3>
+                  </div>
+                  <p className="text-slate-400 text-xs md:text-sm mt-1 leading-relaxed">
+                    {group.subtitle}
+                  </p>
+
+                  {/* Sub-tabs quick buttons if group contains multiple */}
+                  {group.subTabs.length > 1 && (
+                    <div className="flex flex-wrap items-center justify-end gap-1.5 mt-2.5 pt-2 border-t border-slate-800/60">
+                      {group.subTabs.map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenSection(st.id);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 text-[11px] font-bold border border-slate-800 transition-colors"
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Golden Icon Box */}
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-slate-900 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:border-amber-400 group-hover:bg-slate-800 group-hover:shadow-lg group-hover:shadow-amber-500/20 transition-all shrink-0">
+                  <Icon className="w-7 h-7 text-amber-400" />
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          // Detailed Cards (10 Distinct Cards with Individual Access)
+          filteredCards.map((card) => {
+            const Icon = card.icon;
+
+            return (
+              <div
+                key={card.id}
+                onClick={() => handleOpenSection(card.id)}
+                className="group w-full flex items-center justify-between p-4 md:p-5 rounded-2xl bg-[#0b0f17] hover:bg-[#111726] border border-slate-800/80 hover:border-amber-500/50 transition-all duration-200 cursor-pointer shadow-md hover:shadow-amber-500/10 active:scale-[0.99]"
+              >
+                {/* Left: Chevron Arrow */}
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-slate-500 group-hover:text-amber-400 group-hover:-translate-x-1 transition-all shrink-0">
+                  <ChevronLeft className="w-5 h-5" />
+                </div>
+
+                {/* Middle: Title & Subtitle */}
+                <div className="flex-1 px-4 text-right">
+                  <div className="flex items-center justify-end gap-2.5">
+                    {card.badge && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 text-[10px] font-bold border border-amber-500/30">
+                        {card.badge}
+                      </span>
+                    )}
+                    <h3 className="text-white font-black text-base md:text-lg group-hover:text-amber-300 transition-colors">
+                      {card.title}
+                    </h3>
+                    <span className="w-5 h-5 rounded-full bg-slate-900 text-slate-400 text-[11px] font-mono flex items-center justify-center border border-slate-800">
+                      {card.number}
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-xs md:text-sm mt-1 leading-relaxed">
+                    {card.subtitle}
+                  </p>
+                </div>
+
+                {/* Right: Golden Icon Box */}
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-slate-900 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:border-amber-400 group-hover:bg-slate-800 group-hover:shadow-lg group-hover:shadow-amber-500/20 transition-all shrink-0">
+                  <Icon className="w-7 h-7 text-amber-400" />
+                </div>
+              </div>
+            );
+          })
         )}
 
-        <div className="flex flex-wrap items-center gap-4 pt-2">
-          <button
-            onClick={handleDownloadBackup}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 cursor-pointer transition-all"
-          >
-            <Download className="w-4 h-4 text-emerald-400" />
-            تصدير وحفظ نسخة احتياطية (JSON)
-          </button>
+        {/* Empty Search State */}
+        {((viewMode === 'grouped' && filteredGroupedCards.length === 0) ||
+          (viewMode === 'detailed' && filteredCards.length === 0)) && (
+          <div className="p-8 text-center space-y-3">
+            <p className="text-sm font-bold text-slate-400">لا توجد بطاقات تطابق بحثك: &quot;{searchQuery}&quot;</p>
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+            >
+              عرض جميع البطاقات
+            </button>
+          </div>
+        )}
+      </div>
 
-          <label className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 cursor-pointer transition-all">
-            <Upload className="w-4 h-4 text-cyan-400" />
-            استعادة نسخة احتياطية من ملف
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
-        </div>
+      {/* Footer Info Notice */}
+      <div className="text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+        <Sparkles className="w-3.5 h-3.5 text-amber-400/60" />
+        <span>جميع الإعدادات يتم حفظها محلياً وبشكل دائم وفوري دون الحاجة إلى اتصال بالإنترنت</span>
       </div>
     </div>
   );

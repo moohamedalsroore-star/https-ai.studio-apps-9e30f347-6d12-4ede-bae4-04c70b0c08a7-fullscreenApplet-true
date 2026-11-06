@@ -18,8 +18,11 @@ import {
   DollarSign,
   ArrowRightLeft,
   ChevronDown,
+  Boxes,
+  Clock,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
+import { DocumentActionsBar } from './DocumentActionsBar';
 import {
   generateAccountLedger,
   generateBalanceSheet,
@@ -28,12 +31,21 @@ import {
   generateVatReport,
 } from '../utils/accountingEngine';
 import { tafqeet } from '../utils/tafqeet';
+import { exportProductVelocityToExcel, exportDebtAgingToExcel } from '../utils/excelExport';
 
 export const ReportsView: React.FC = () => {
-  const { accounts, journalEntries, invoices, settings, currencies, contacts } = useAccounting();
+  const { accounts, journalEntries, invoices, settings, currencies, contacts, products, stockMovements, showToast } = useAccounting();
 
   const [activeReport, setActiveReport] = useState<
-    'INCOME_STATEMENT' | 'BALANCE_SHEET' | 'TRIAL_BALANCE' | 'ACCOUNT_LEDGER' | 'DEBTS_BOOK' | 'FX_VALUATION' | 'VAT_RETURN'
+    | 'INCOME_STATEMENT'
+    | 'BALANCE_SHEET'
+    | 'TRIAL_BALANCE'
+    | 'ACCOUNT_LEDGER'
+    | 'DEBTS_BOOK'
+    | 'PRODUCT_VELOCITY'
+    | 'DEBT_AGING'
+    | 'FX_VALUATION'
+    | 'VAT_RETURN'
   >('INCOME_STATEMENT');
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>('acc-1101');
@@ -85,18 +97,156 @@ export const ReportsView: React.FC = () => {
   const totalCustomerDebt = customersWithDebt.reduce((sum, c) => sum + (c.balance || 0), 0);
   const totalSupplierDebt = suppliersWithDebt.reduce((sum, c) => sum + (c.balance || 0), 0);
 
+  // Onyx Pro: Product Velocity & Dormancy Analysis Data
+  const productVelocityData = products.map((prod) => {
+    const salesMovements = stockMovements.filter((sm) => sm.productId === prod.id && sm.type === 'SALE');
+    const totalSoldQty = salesMovements.reduce((sum, sm) => sum + Math.abs(sm.quantityChange), 0);
+    const lastSale = salesMovements.length > 0 ? salesMovements[0].date : undefined;
+    const totalSalesValue = totalSoldQty * prod.salePrice;
+    let velocityCategory: 'FAST' | 'MEDIUM' | 'SLOW' | 'DORMANT' = 'DORMANT';
+    if (totalSoldQty >= 20) velocityCategory = 'FAST';
+    else if (totalSoldQty >= 5) velocityCategory = 'MEDIUM';
+    else if (totalSoldQty > 0) velocityCategory = 'SLOW';
+
+    return {
+      id: prod.id,
+      code: prod.code,
+      name: prod.nameAr,
+      category: prod.category,
+      unit: prod.unit,
+      stockQty: prod.stockQty,
+      soldQty: totalSoldQty,
+      salePrice: prod.salePrice,
+      totalSalesValue,
+      lastSaleDate: lastSale,
+      velocityCategory,
+    };
+  });
+
+  // Onyx Pro: Comprehensive Debt Aging Data
+  const nowTime = Date.now();
+  const debtAgingData = contacts.map((c) => {
+    const contactInvoices = invoices.filter(
+      (inv) => (inv.partyId === c.id || inv.partyName === c.name) && inv.status !== 'PAID'
+    );
+    let c0to30 = 0;
+    let c31to60 = 0;
+    let c61to90 = 0;
+    let cOver90 = 0;
+
+    contactInvoices.forEach((inv) => {
+      const remaining = (inv.grandTotal || 0) - (inv.paidAmount || 0);
+      if (remaining > 0) {
+        const days = Math.floor((nowTime - new Date(inv.date).getTime()) / (1000 * 60 * 60 * 24));
+        if (days <= 30) c0to30 += remaining;
+        else if (days <= 60) c31to60 += remaining;
+        else if (days <= 90) c61to90 += remaining;
+        else cOver90 += remaining;
+      }
+    });
+
+    // If contact has non-invoice ledger balance but no unpaid invoices:
+    if (c.balance > 0 && c0to30 + c31to60 + c61to90 + cOver90 === 0) {
+      c0to30 = c.balance;
+    }
+
+    return {
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      type: c.type,
+      phone: c.phone,
+      totalBalance: c.balance,
+      current0to30: c0to30,
+      days31to60: c31to60,
+      days61to90: c61to90,
+      daysOver90: cOver90,
+    };
+  });
+
   const reportTabs = [
     { id: 'INCOME_STATEMENT', label: 'قائمة الدخل والأرباح', icon: TrendingUp },
     { id: 'BALANCE_SHEET', label: 'الميزانية العمومية', icon: Scale },
-    { id: 'TRIAL_BALANCE', label: 'ميزان المراجعة', icon: FileSpreadsheet },
+    { id: 'TRIAL_BALANCE', label: 'ميزان المراجعة والأرصدة النهائية', icon: FileSpreadsheet },
+    { id: 'PRODUCT_VELOCITY', label: 'حركة وركود الأصناف (أونكس برو)', icon: Boxes, badge: productVelocityData.filter(p => p.velocityCategory === 'DORMANT').length || undefined },
+    { id: 'DEBT_AGING', label: 'أعمار الديون والذمم (أونكس برو)', icon: Clock },
     { id: 'ACCOUNT_LEDGER', label: 'كشف الأستاذ العام', icon: FileText },
     { id: 'DEBTS_BOOK', label: 'دفتر الديون والذمم', icon: Users, badge: customersWithDebt.filter(c => c.balance > 0).length || undefined },
     { id: 'FX_VALUATION', label: 'تقييم العملات الأجنبية (FX)', icon: Coins },
     { id: 'VAT_RETURN', label: 'إقرار ضريبة القيمة المضافة', icon: Percent },
   ];
 
+  const getReportMeta = () => {
+    switch (activeReport) {
+      case 'INCOME_STATEMENT':
+        return {
+          title: 'قائمة الدخل والأرباح والخسائر',
+          filename: `قائمة_الدخل_والأرباح_${settings.companyName}`,
+        };
+      case 'BALANCE_SHEET':
+        return {
+          title: 'الميزانية العمومية والمركز المالي',
+          filename: `الميزانية_العمومية_${settings.companyName}`,
+        };
+      case 'TRIAL_BALANCE':
+        return {
+          title: 'ميزان المراجعة والأرصدة الختامية والنهائية',
+          filename: `ميزان_المراجعة_والأرصدة_النهائية_${settings.companyName}`,
+        };
+      case 'ACCOUNT_LEDGER':
+        return {
+          title: `كشف حساب الأستاذ العام - ${accountLedger.account?.nameAr || 'الحساب'} (${accountLedger.account?.code || ''})`,
+          filename: `كشف_أستاذ_${accountLedger.account?.nameAr || 'الحساب'}_${settings.companyName}`,
+        };
+      case 'DEBTS_BOOK':
+        return {
+          title: 'دفتر الديون والذمم وأرصدة العملاء والموردين',
+          filename: `دفتر_الديون_والذمم_${settings.companyName}`,
+        };
+      case 'FX_VALUATION':
+        return {
+          title: 'تقرير تقييم العملات الأجنبية وفروق أسعار الصرف',
+          filename: `تقييم_العملات_الأجنبية_${settings.companyName}`,
+        };
+      case 'PRODUCT_VELOCITY':
+        return {
+          title: 'تقرير حركة وركود الأصناف وتحليل المبيعات (نظام أونكس برو)',
+          filename: `تقرير_حركة_وركود_الأصناف_${settings.companyName}`,
+        };
+      case 'DEBT_AGING':
+        return {
+          title: 'تقرير أعمار الديون والذمم المدينة والدائنة (نظام أونكس برو)',
+          filename: `تقرير_أعمار_الديون_${settings.companyName}`,
+        };
+      case 'VAT_RETURN':
+        return {
+          title: 'إقرار ضريبة القيمة المضافة (ZATCA/VAT Return)',
+          filename: `إقرار_ضريبة_القيمة_المضافة_${settings.companyName}`,
+        };
+      default:
+        return {
+          title: 'التقرير المالي',
+          filename: `تقرير_مالي_${settings.companyName}`,
+        };
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (activeReport === 'PRODUCT_VELOCITY') {
+      exportProductVelocityToExcel(productVelocityData, settings.companyName);
+      showToast('تم تصدير تقرير حركة وركود الأصناف إلى Excel (.xlsx) بنجاح ✓', 'success');
+    } else if (activeReport === 'DEBT_AGING' || activeReport === 'DEBTS_BOOK') {
+      exportDebtAgingToExcel(debtAgingData, settings.companyName, settings.baseCurrency);
+      showToast('تم تصدير تقرير أعمار الديون والذمم إلى Excel (.xlsx) بنجاح ✓', 'success');
+    } else {
+      showToast('يمكنك حفظ التقرير كـ PDF أو معاينته مباشرة عبر أزرار أونكس برو أعلاه', 'info');
+    }
+  };
+
+  const currentReportMeta = getReportMeta();
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28 sm:pb-12">
       {/* Header & Print Button */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
         <div>
@@ -105,19 +255,27 @@ export const ReportsView: React.FC = () => {
             التقارير والقوائم المالية الذكية
           </h2>
           <p className="text-sm text-slate-400">
-            توليد لحظي متوازن للقوائم المالية، دفتر الديون والذمم، وتعدد العملات وفقاً للمعايير المحاسبية الدولية
+            توليد لحظي متوازن للقوائم المالية، ميزان المراجعة والأرصدة النهائية، حركة وركود الأصناف، وأعمار الديون
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-emerald-400 font-bold hidden md:inline">💡 لحفظ التقرير بصيغة PDF: اختر "حفظ بتنسيق PDF"</span>
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/30 cursor-pointer transition-all"
+            type="button"
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-800/80 hover:bg-emerald-700 text-emerald-100 text-xs font-bold border border-emerald-600/40 cursor-pointer shadow transition-all active:scale-95"
+            title="تصدير التقرير إلى ملف Excel (.xlsx)"
           >
-            <Printer className="w-4 h-4 text-white" />
-            طباعة / تصدير PDF للتقرير
+            <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+            <span>تصدير Excel</span>
           </button>
+
+          <DocumentActionsBar
+            targetElementId="financial-report-content"
+            filename={currentReportMeta.filename}
+            documentTitle={currentReportMeta.title}
+            hasData={journalEntries.length > 0 || invoices.length > 0 || products.length > 0}
+          />
         </div>
       </div>
 
@@ -176,8 +334,9 @@ export const ReportsView: React.FC = () => {
         })}
       </div>
 
-      {/* REPORT 1: INCOME STATEMENT (قائمة الدخل) */}
-      {activeReport === 'INCOME_STATEMENT' && (
+      <div id="financial-report-content" className="space-y-6">
+        {/* REPORT 1: INCOME STATEMENT (قائمة الدخل) */}
+        {activeReport === 'INCOME_STATEMENT' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 printable-card">
           {/* Printable Report Header */}
           <div className="text-center border-b border-slate-800 pb-5">
@@ -766,6 +925,210 @@ export const ReportsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* REPORT 8: PRODUCT VELOCITY & DORMANCY (حركة وركود الأصناف - أونكس برو) */}
+      {activeReport === 'PRODUCT_VELOCITY' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 printable-card">
+          <div className="text-center border-b border-slate-800 pb-5">
+            <h3 className="text-xl font-black text-white">{settings.companyName}</h3>
+            <h4 className="text-lg font-bold text-emerald-400 mt-1">
+              تقرير حركة وركود الأصناف وتحليل معدل الدوران (نظام أونكس برو)
+            </h4>
+            <div className="text-xs text-slate-400 font-mono-num mt-1">
+              العملة الأساسية: {settings.baseCurrency} | التاريخ: {new Date().toISOString().split('T')[0]}
+            </div>
+          </div>
+
+          {/* Velocity KPI Badges */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">الأصناف الأكثر حركة ومبيعاً</span>
+              <div className="font-mono-num font-black text-emerald-400 text-xl mt-1">
+                {productVelocityData.filter((p) => p.velocityCategory === 'FAST').length} صنف
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">أصناف حركة متوسطة</span>
+              <div className="font-mono-num font-black text-cyan-400 text-xl mt-1">
+                {productVelocityData.filter((p) => p.velocityCategory === 'MEDIUM').length} صنف
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">أصناف بطيئة الحركة</span>
+              <div className="font-mono-num font-black text-amber-400 text-xl mt-1">
+                {productVelocityData.filter((p) => p.velocityCategory === 'SLOW').length} صنف
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">الأصناف الراكدة (Dormant)</span>
+              <div className="font-mono-num font-black text-rose-400 text-xl mt-1">
+                {productVelocityData.filter((p) => p.velocityCategory === 'DORMANT').length} صنف
+              </div>
+            </div>
+          </div>
+
+          {/* Velocity Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-800/90 text-slate-300 font-bold">
+                <tr>
+                  <th className="py-3 px-3">كود الصنف</th>
+                  <th className="py-3 px-3">اسم الصنف</th>
+                  <th className="py-3 px-3">التصنيف</th>
+                  <th className="py-3 px-3 text-center">الرصيد الحالي</th>
+                  <th className="py-3 px-3 text-center">الكمية المباعة</th>
+                  <th className="py-3 px-3 text-center">إجمالي المبيعات</th>
+                  <th className="py-3 px-3 text-center">آخر حركة بيع</th>
+                  <th className="py-3 px-3 text-center">تصنيف الحركة</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                {productVelocityData.map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-800/30">
+                    <td className="py-2.5 px-3 font-bold text-emerald-400">{p.code}</td>
+                    <td className="py-2.5 px-3 font-bold text-white font-sans">{p.name}</td>
+                    <td className="py-2.5 px-3 text-slate-400 font-sans">{p.category || '-'}</td>
+                    <td className="py-2.5 px-3 text-center font-bold text-white">
+                      {p.stockQty} {p.unit}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-cyan-400">
+                      {p.soldQty} {p.unit}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-bold text-emerald-400">
+                      {p.totalSalesValue.toFixed(2)} {settings.baseCurrency}
+                    </td>
+                    <td className="py-2.5 px-3 text-center text-slate-400">
+                      {p.lastSaleDate || 'لا توجد مبيعات'}
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-sans">
+                      {p.velocityCategory === 'FAST' && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          🔥 سريع الحركة
+                        </span>
+                      )}
+                      {p.velocityCategory === 'MEDIUM' && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                          حركة متوسطة
+                        </span>
+                      )}
+                      {p.velocityCategory === 'SLOW' && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                          بطيء الحركة
+                        </span>
+                      )}
+                      {p.velocityCategory === 'DORMANT' && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                          ⚠️ صنف راكد
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT 9: DEBT AGING ANALYSIS (تقرير أعمار الديون والذمم - أونكس برو) */}
+      {activeReport === 'DEBT_AGING' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 printable-card">
+          <div className="text-center border-b border-slate-800 pb-5">
+            <h3 className="text-xl font-black text-white">{settings.companyName}</h3>
+            <h4 className="text-lg font-bold text-amber-400 mt-1">
+              تقرير أعمار الديون والذمم المدينة والدائنة (نظام أونكس برو)
+            </h4>
+            <div className="text-xs text-slate-400 font-mono-num mt-1">
+              تحليل الاستحقاق والتعثر | العملة: {settings.baseCurrency} | التاريخ: {new Date().toISOString().split('T')[0]}
+            </div>
+          </div>
+
+          {/* Aging KPI Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">1 - 30 يوماً (حالي)</span>
+              <div className="font-mono-num font-black text-emerald-400 text-lg mt-1">
+                {debtAgingData.reduce((sum, d) => sum + d.current0to30, 0).toFixed(2)} {settings.baseCurrency}
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">31 - 60 يوماً</span>
+              <div className="font-mono-num font-black text-cyan-400 text-lg mt-1">
+                {debtAgingData.reduce((sum, d) => sum + d.days31to60, 0).toFixed(2)} {settings.baseCurrency}
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">61 - 90 يوماً</span>
+              <div className="font-mono-num font-black text-amber-400 text-lg mt-1">
+                {debtAgingData.reduce((sum, d) => sum + d.days61to90, 0).toFixed(2)} {settings.baseCurrency}
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-center">
+              <span className="text-xs text-slate-400 font-medium">أكثر من 90 يوماً (متعثر)</span>
+              <div className="font-mono-num font-black text-rose-400 text-lg mt-1">
+                {debtAgingData.reduce((sum, d) => sum + d.daysOver90, 0).toFixed(2)} {settings.baseCurrency}
+              </div>
+            </div>
+          </div>
+
+          {/* Aging Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-slate-800/90 text-slate-300 font-bold">
+                <tr>
+                  <th className="py-3 px-3">الكود</th>
+                  <th className="py-3 px-3">اسم الطرف</th>
+                  <th className="py-3 px-3 text-center">النوع</th>
+                  <th className="py-3 px-3 text-center">الهاتف</th>
+                  <th className="py-3 px-3 text-center font-bold">الرصيد الإجمالي</th>
+                  <th className="py-3 px-3 text-center text-emerald-400">1 - 30 يوماً</th>
+                  <th className="py-3 px-3 text-center text-cyan-400">31 - 60 يوماً</th>
+                  <th className="py-3 px-3 text-center text-amber-400">61 - 90 يوماً</th>
+                  <th className="py-3 px-3 text-center text-rose-400">أكثر من 90 يوماً</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80 font-mono-num">
+                {debtAgingData
+                  .filter((d) => d.totalBalance > 0)
+                  .map((d) => (
+                    <tr key={d.id} className="hover:bg-slate-800/30">
+                      <td className="py-2.5 px-3 font-bold text-slate-300">{d.code}</td>
+                      <td className="py-2.5 px-3 font-bold text-white font-sans">{d.name}</td>
+                      <td className="py-2.5 px-3 text-center font-sans">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            d.type === 'CUSTOMER'
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : 'bg-amber-500/20 text-amber-400'
+                          }`}
+                        >
+                          {d.type === 'CUSTOMER' ? 'عميل' : 'مورد'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-slate-400">{d.phone || '-'}</td>
+                      <td className="py-2.5 px-3 text-center font-black text-white text-sm">
+                        {d.totalBalance.toFixed(2)} {settings.baseCurrency}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-emerald-400">
+                        {d.current0to30 > 0 ? `${d.current0to30.toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-cyan-400">
+                        {d.days31to60 > 0 ? `${d.days31to60.toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-amber-400">
+                        {d.days61to90 > 0 ? `${d.days61to90.toFixed(2)}` : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-rose-400">
+                        {d.daysOver90 > 0 ? `${d.daysOver90.toFixed(2)}` : '-'}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 };

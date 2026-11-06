@@ -16,6 +16,7 @@ import {
 import { useAccounting } from '../context/AccountingContext';
 import { JournalEntry, JournalSourceType } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
+import { DocumentActionsBar } from './DocumentActionsBar';
 
 export const JournalView: React.FC = () => {
   const {
@@ -160,14 +161,12 @@ export const JournalView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 no-print">
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 shadow cursor-pointer transition-all"
-            title="طباعة أو تصدير دفتر القيود اليومية كملف PDF"
-          >
-            <Printer className="w-4 h-4 text-emerald-400" />
-            طباعة / تصدير دفتر القيود PDF
-          </button>
+          <DocumentActionsBar
+            targetElementId="journal-entries-table-content"
+            filename={`دفتر_قيود_اليومية_العامة_${settings.companyName}`}
+            documentTitle="سجل دفتر قيود اليومية العامة"
+            hasData={journalEntries.length > 0}
+          />
           <button
             onClick={() => {
               setValidationError(null);
@@ -215,7 +214,16 @@ export const JournalView: React.FC = () => {
       </div>
 
       {/* Journal Entries Cards/Table */}
-      <div className="space-y-4">
+      <div id="journal-entries-table-content" className="space-y-4 printable-card">
+        {/* Printable Journal Header */}
+        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
+          <h2 className="text-2xl font-black">{settings.companyName}</h2>
+          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
+          <h3 className="text-lg font-bold mt-2">دفتر قيود اليومية العامة المزدوجة المتوازنة (General Journal)</h3>
+          <div className="text-xs text-slate-600 font-mono-num mt-1">
+            التاريخ: {new Date().toISOString().split('T')[0]} | إجمالي القيود: {filteredEntries.length} قيد | العملة: {settings.baseCurrency}
+          </div>
+        </div>
         {filteredEntries.map((entry) => (
           <div
             key={entry.id}
@@ -535,15 +543,13 @@ export const JournalView: React.FC = () => {
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <span className="font-bold text-sm">سند قيد اليومية: {previewEntry.entryNumber}</span>
               <div className="flex items-center gap-2">
+                <DocumentActionsBar
+                  targetElementId="journal-print-content"
+                  filename={`سند_قيد_${previewEntry.entryNumber}`}
+                  documentTitle={`سند قيد اليومية رقم ${previewEntry.entryNumber}`}
+                />
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-600/30"
-                  title="طباعة سند القيد أو حفظه كملف PDF"
-                >
-                  <Printer className="w-4 h-4" />
-                  طباعة / حفظ PDF
-                </button>
-                <button
+                  type="button"
                   onClick={() => setPreviewEntry(null)}
                   className="p-1 rounded-xl text-slate-400 hover:text-white cursor-pointer"
                 >
@@ -552,7 +558,7 @@ export const JournalView: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-8 text-right printable-card text-xs space-y-4">
+            <div id="journal-print-content" className="p-8 text-right printable-card text-xs space-y-4">
               <div className="text-center border-b-2 border-slate-900 pb-3">
                 <h3 className="text-lg font-black">{settings.companyName}</h3>
                 <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>

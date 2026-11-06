@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { StockReceiptNote, StockTransfer } from '../types/accounting';
+import { DocumentActionsBar } from './DocumentActionsBar';
 
 export const StockOperationsView: React.FC = () => {
   const {
@@ -129,30 +130,47 @@ export const StockOperationsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <DocumentActionsBar
+            targetElementId="stock-operations-table-content"
+            filename={`سجل_الحركات_المخزنية_${settings.companyName}`}
+            documentTitle="سجل التحويلات والإدخالات والإخراجات المخزنية"
+            hasData={(stockTransfers?.length || 0) + (stockReceiptNotes?.length || 0) > 0}
+          />
           <button
             onClick={handleOpenTransfer}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 cursor-pointer transition-all"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/20 cursor-pointer transition-all"
           >
             <ArrowLeftRight className="w-4 h-4" />
-            تحويل مخزني بين المستودعات
+            تحويل مخزني
           </button>
           <button
             onClick={() => handleOpenReceipt('IN')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
           >
             <ArrowDownLeft className="w-4 h-4" />
-            سند استلام / إدخال مخزني
+            سند إدخال
           </button>
           <button
             onClick={() => handleOpenReceipt('OUT')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-lg shadow-amber-600/20 cursor-pointer transition-all"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-lg shadow-amber-600/20 cursor-pointer transition-all"
           >
             <ArrowUpRight className="w-4 h-4" />
-            سند صرف / إخراج مخزني
+            سند إخراج
           </button>
         </div>
       </div>
+
+      <div id="stock-operations-table-content" className="space-y-4 printable-card">
+        {/* Printable Stock Operations Header */}
+        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
+          <h2 className="text-2xl font-black">{settings.companyName}</h2>
+          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
+          <h3 className="text-lg font-bold mt-2">سجل حركة المناقلات والتحويلات وسندات الاستلام والصرف المخزني</h3>
+          <div className="text-xs text-slate-600 font-mono-num mt-1">
+            التاريخ: {new Date().toISOString().split('T')[0]} | التحويلات: {stockTransfers.length} | السندات: {stockReceiptNotes.length} | العملة: {settings.baseCurrency}
+          </div>
+        </div>
 
       {/* Tabs */}
       <div className="flex border-b border-slate-800 space-x-reverse space-x-2">
@@ -338,6 +356,7 @@ export const StockOperationsView: React.FC = () => {
           </div>
         );
       })()}
+      </div>
 
       {/* MODAL 1: CREATE TRANSFER */}
       {showTransferModal && (

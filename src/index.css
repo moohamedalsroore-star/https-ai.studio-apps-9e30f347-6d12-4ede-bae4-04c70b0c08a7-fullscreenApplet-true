@@ -1,8 +1,24 @@
 @import "tailwindcss";
 
+:root {
+  --color-midnight: #020824;
+  --color-midnight-card: #040c2e;
+  --color-midnight-surface: #061340;
+  --color-royal-blue: #075bff;
+  --color-electric-blue: #00c8ff;
+  --color-neon-purple: #7900ff;
+  --color-deep-violet: #4200a8;
+  --color-emerald: #00d99a;
+  --color-gold: #ffc629;
+  --color-snow: #f5f8ff;
+  --color-slate-blue: #aab8d6;
+}
+
 @layer base {
   body {
     font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #020824;
+    color: #f5f8ff;
   }
   
   /* Number styling for financial data */
@@ -12,20 +28,72 @@
   }
 }
 
+/* Neon Glow utilities & Design System Tokens */
+.glow-cyan-sm {
+  box-shadow: 0 0 12px rgba(0, 200, 255, 0.4);
+}
+.glow-cyan {
+  box-shadow: 0 0 22px rgba(0, 200, 255, 0.55), inset 0 0 8px rgba(0, 200, 255, 0.2);
+}
+.glow-emerald {
+  box-shadow: 0 0 22px rgba(0, 217, 154, 0.6), inset 0 0 8px rgba(0, 217, 154, 0.25);
+}
+.glow-purple {
+  box-shadow: 0 0 22px rgba(121, 0, 255, 0.55), inset 0 0 8px rgba(121, 0, 255, 0.25);
+}
+.glow-royal {
+  box-shadow: 0 0 22px rgba(7, 91, 255, 0.55), inset 0 0 8px rgba(7, 91, 255, 0.25);
+}
+.glow-gold {
+  box-shadow: 0 0 16px rgba(255, 198, 41, 0.5);
+}
+
+/* Neon Multi-color Border Card */
+.neon-border-card {
+  position: relative;
+  border-radius: 1.5rem;
+  padding: 1.5px;
+  background: linear-gradient(135deg, #00c8ff 0%, #075bff 35%, #7900ff 70%, #00d99a 100%);
+  box-shadow: 0 0 35px rgba(0, 200, 255, 0.35);
+}
+
+.neon-border-card-inner {
+  border-radius: calc(1.5rem - 1.5px);
+  background: radial-gradient(circle at top right, rgba(7, 91, 255, 0.15), transparent 60%), #030a2a;
+}
+
+/* Cosmic Ambient Lighting for page */
+.cosmic-mesh-bg {
+  background-color: #020824;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(0, 200, 255, 0.14) 0px, transparent 45%),
+    radial-gradient(at 100% 0%, rgba(121, 0, 255, 0.16) 0px, transparent 45%),
+    radial-gradient(at 50% 40%, rgba(7, 91, 255, 0.08) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(121, 0, 255, 0.14) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0, 217, 154, 0.12) 0px, transparent 45%);
+  background-attachment: fixed;
+}
+
+/* Subtle cyber dot pattern */
+.cyber-dots-bg {
+  background-image: radial-gradient(rgba(0, 200, 255, 0.15) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
 /* Custom scrollbars for data tables */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #020824;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #0d286d;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #00c8ff;
 }
 
 /* Print Stylesheet for Invoices, Vouchers, Quotations and Reports PDF Export */

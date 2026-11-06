@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+  "id": "/",
+  "name": "الغفاري سوفت PRO",
+  "short_name": "الغفاري PRO",
+  "description": "تطبيق محاسبة متكامل لإدارة نشاطك التجاري، الفواتير، المخزون، ونقاط البيع",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "window-controls-overlay"
+  ],
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "dir": "rtl",
+  "lang": "ar",
+  "categories": [
+    "business",
+    "finance",
+    "productivity"
+  ],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-monochrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    },
+    {
+      "src": "/pwa-monochrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "monochrome"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/screenshot1.jpg",
+      "sizes": "720x1600",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "شاشة تطبيق الغفاري سوفت PRO الرئيسية"
+    },
+    {
+      "src": "/screenshots/screenshot2.jpg",
+      "sizes": "720x1600",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "مركز إعدادات النظام المتقدمة"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "فاتورة مبيعات جديدة",
+      "short_name": "فاتورة مبيعات",
+      "description": "إصدار فاتورة مبيعات ضريبية جديدة",
+      "url": "/?view=invoices",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "نقطة البيع السريعة",
+      "short_name": "نقطة بيع",
+      "description": "واجهة الكاشير ونقاط البيع السريعة POS",
+      "url": "/?view=pos",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "سند قبض مالي",
+      "short_name": "سند قبض",
+      "description": "تحصيل وسند قبض فوري",
+      "url": "/?view=vouchers",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "إعدادات النظام",
+      "short_name": "الإعدادات",
+      "description": "مركز إعدادات النظام الشامل",
+      "url": "/?view=settings",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

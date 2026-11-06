@@ -5,7 +5,11 @@ export type StockMovementType =
   | 'SALES_RETURN'        // مردود مبيعات
   | 'PURCHASE_RETURN'     // مردود مشتريات
   | 'STOCK_ADJUSTMENT_IN' // تسوية جردية - زيادة
-  | 'STOCK_ADJUSTMENT_OUT';// تسوية جردية - عجز
+  | 'STOCK_ADJUSTMENT_OUT'// تسوية جردية - عجز
+  | 'ASSEMBLY_IN'         // تجميع صنف مركب
+  | 'ASSEMBLY_OUT'        // تفكيك أو استهلاك مكونات
+  | 'TRANSFER_IN'         // تحويل مخزني وارد
+  | 'TRANSFER_OUT';       // تحويل مخزني صادر
 
 export interface StockMovement {
   id: string;

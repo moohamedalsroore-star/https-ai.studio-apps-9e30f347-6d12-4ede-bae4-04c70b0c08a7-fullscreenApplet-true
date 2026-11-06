@@ -78,6 +78,24 @@ export interface Warehouse {
   isMain: boolean;
 }
 
+export type PriceTier = 'RETAIL' | 'WHOLESALE' | 'SUPER_WHOLESALE';
+
+export interface ProductUnit {
+  id: string;
+  name: string; // e.g. كرتون، حبة، علبة، درزن
+  factor: number; // معامل التحويل مقارنة بالوحدة الأساسية
+  barcode?: string;
+  salePrice?: number;
+  costPrice?: number;
+}
+
+export interface ProductComponent {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unit?: string;
+}
+
 export interface Product {
   id: string;
   code: string;
@@ -87,9 +105,15 @@ export interface Product {
   unit: string;
   costPrice: number;
   salePrice: number;
+  wholesalePrice?: number; // سعر الجملة
+  specialPrice?: number; // سعر جملة الجملة
   stockQty: number;
+  reservedQty?: number; // كمية محجوزة
   minStockAlert: number;
   taxRate: number;
+  units?: ProductUnit[]; // وحدات القياس المتعددة
+  isComposite?: boolean; // صنف مركب
+  components?: ProductComponent[]; // مكونات الصنف المركب (BOM)
   warehouseStocks?: Record<string, number>;
 }
 
@@ -104,6 +128,8 @@ export interface InvoiceItem {
   taxRate: number;
   taxAmount: number;
   total: number;
+  unitName?: string;
+  unitFactor?: number;
 }
 
 export type PaymentMethod = 'CASH' | 'CREDIT' | 'BANK' | 'SPLIT';
@@ -121,6 +147,7 @@ export interface Invoice {
   items: InvoiceItem[];
   subtotal: number;
   discountTotal: number;
+  invoiceDiscount?: number; // خصم إضافي على إجمالي الفاتورة
   taxTotal: number;
   grandTotal: number;
   paymentMethod: PaymentMethod;
@@ -129,6 +156,7 @@ export interface Invoice {
   cashAccountId?: string;
   notes?: string;
   status: 'PAID' | 'PARTIAL' | 'UNPAID';
+  workflowStatus?: 'DRAFT' | 'APPROVED' | 'POSTED' | 'VOID'; // دورة اعتماد المستند وفق أونكس برو
   journalEntryId?: string;
   currency: string;
   exchangeRate: number;
@@ -215,7 +243,7 @@ export interface StockReceiptNote {
   createdAt: string;
 }
 
-export type VoucherType = 'RECEIPT' | 'PAYMENT';
+export type VoucherType = 'RECEIPT' | 'PAYMENT' | 'TRANSFER';
 
 export interface Voucher {
   id: string;
@@ -227,6 +255,8 @@ export interface Voucher {
   accountName: string;
   partyAccountId: string;
   partyAccountName: string;
+  toAccountId?: string; // للحساب المحول إليه في سند التحويل
+  toAccountName?: string;
   amount: number;
   paymentMethod: PaymentMethod;
   referenceNumber?: string;
@@ -235,6 +265,43 @@ export interface Voucher {
   exchangeRate: number;
   amountBase: number;
   journalEntryId?: string;
+  createdAt: string;
+}
+
+export type UserRole = 'ADMIN' | 'ACCOUNTANT' | 'CASHIER' | 'STOREKEEPER';
+
+export interface SystemUser {
+  id: string;
+  name: string;
+  username: string;
+  role: UserRole;
+  phone?: string;
+  active: boolean;
+  branchId?: string;
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  userName: string;
+  userRole: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'POST' | 'VOID' | 'TRANSFER' | 'ASSEMBLE' | 'DISASSEMBLE' | 'RECONCILE' | 'EXPORT';
+  module: string;
+  entityId?: string;
+  entityNumber?: string;
+  details: string;
+}
+
+export interface BankReconciliationRecord {
+  id: string;
+  accountId: string;
+  statementDate: string;
+  statementBalance: number;
+  bookBalance: number;
+  difference: number;
+  isReconciled: boolean;
+  notes?: string;
   createdAt: string;
 }
 
@@ -280,6 +347,15 @@ export type BusinessSector =
   | 'PERSONAL' 
   | 'PHARMACY';
 
+import type {
+  PrintSettings,
+  DocumentTemplateSettings,
+  AccountingSettings,
+  InventorySettings,
+  ReportSettings,
+  AppearanceAndNotificationsSettings,
+} from './settings';
+
 export interface SystemSettings {
   companyName: string;
   companyNameEn: string;
@@ -296,5 +372,14 @@ export interface SystemSettings {
   fiscalYear: string;
   closingDate?: string;
   invoiceFooterNotes?: string;
+  decimalPlaces?: number;
+
+  // Comprehensive Settings Center modules
+  printSettings?: PrintSettings;
+  documentTemplates?: DocumentTemplateSettings;
+  accountingConfig?: AccountingSettings;
+  inventoryConfig?: InventorySettings;
+  reportConfig?: ReportSettings;
+  appearanceConfig?: AppearanceAndNotificationsSettings;
 }
 

@@ -8,6 +8,14 @@ import {
   Warehouse,
   CostCenter,
 } from '../types/accounting';
+import {
+  DEFAULT_PRINT_SETTINGS,
+  DEFAULT_DOCUMENT_TEMPLATES,
+  DEFAULT_ACCOUNTING_CONFIG,
+  DEFAULT_INVENTORY_CONFIG,
+  DEFAULT_REPORT_CONFIG,
+  DEFAULT_APPEARANCE_CONFIG,
+} from './settingsDefaults';
 
 export const INITIAL_SETTINGS: SystemSettings = {
   companyName: 'الغفاري سوفت برو',
@@ -23,6 +31,13 @@ export const INITIAL_SETTINGS: SystemSettings = {
   autoPostJournal: true,
   fiscalYear: '2026',
   invoiceFooterNotes: 'شكراً لتعاملكم معنا. البضاعة المباعة ترد وتستبدل خلال المدة المحددة نظاماً.',
+  decimalPlaces: 2,
+  printSettings: DEFAULT_PRINT_SETTINGS,
+  documentTemplates: DEFAULT_DOCUMENT_TEMPLATES,
+  accountingConfig: DEFAULT_ACCOUNTING_CONFIG,
+  inventoryConfig: DEFAULT_INVENTORY_CONFIG,
+  reportConfig: DEFAULT_REPORT_CONFIG,
+  appearanceConfig: DEFAULT_APPEARANCE_CONFIG,
 };
 
 export const INITIAL_BRANCHES: Branch[] = [];

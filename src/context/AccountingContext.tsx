@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Trash2, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import {
   Account,
+  AuditLogEntry,
+  BankReconciliationRecord,
   Branch,
   Contact,
   CostCenter,
@@ -15,7 +17,9 @@ import {
   StockReceiptNote,
   StockTransfer,
   SystemSettings,
+  SystemUser,
   Voucher,
+  VoucherType,
   Warehouse,
 } from '../types/accounting';
 import { StockAdjustment, StockMovement, InventoryValuationSummary } from '../types/inventory';
@@ -200,9 +204,10 @@ interface AccountingContextType {
   }) => StockReceiptNote;
 
   createVoucher: (data: {
-    type: 'RECEIPT' | 'PAYMENT';
+    type: VoucherType;
     accountId: string;
     partyAccountId: string;
+    toAccountId?: string;
     amount: number;
     currency?: string;
     exchangeRate?: number;
@@ -275,6 +280,40 @@ interface AccountingContextType {
   openDeleteConfirm: (dialog: DeleteConfirmDialog) => void;
   closeDeleteConfirm: () => void;
 
+  // Onyx Pro Enhanced Financial & Inventory Operations
+  createTransferVoucher: (data: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    currency?: string;
+    exchangeRate?: number;
+    description: string;
+    referenceNumber?: string;
+    branchId?: string;
+  }) => Voucher;
+
+  assembleProduct: (productId: string, quantity: number, notes?: string) => { success: boolean; message: string };
+  disassembleProduct: (productId: string, quantity: number, notes?: string) => { success: boolean; message: string };
+
+  cloneInvoice: (invoiceId: string) => Invoice | null;
+  cloneQuotation: (quoteId: string) => Quotation | null;
+  voidInvoice: (invoiceId: string, reason: string) => boolean;
+
+  // Security, Users & Roles
+  users: SystemUser[];
+  currentUser: SystemUser;
+  setCurrentUser: (user: SystemUser) => void;
+  addUser: (user: Omit<SystemUser, 'id' | 'createdAt'>) => SystemUser;
+  updateUser: (id: string, updates: Partial<SystemUser>) => void;
+
+  // Audit Trail Log
+  auditLogs: AuditLogEntry[];
+  addAuditLog: (action: AuditLogEntry['action'], module: string, details: string, entityId?: string, entityNumber?: string) => void;
+
+  // Bank & Cash Reconciliation
+  reconciliations: BankReconciliationRecord[];
+  addReconciliation: (record: Omit<BankReconciliationRecord, 'id' | 'createdAt'>) => BankReconciliationRecord;
+
   // Branch & Warehouse Direct Creation State from Header
   branchActionModal: 'BRANCH' | 'WAREHOUSE' | 'MENU' | null;
   setBranchActionModal: (action: 'BRANCH' | 'WAREHOUSE' | 'MENU' | null) => void;
@@ -318,7 +357,16 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           parsed.companyName = 'الغفاري سوفت برو';
           parsed.companyNameEn = 'Al-Ghafari Soft Pro';
         }
-        return parsed;
+        return {
+          ...INITIAL_SETTINGS,
+          ...parsed,
+          printSettings: { ...INITIAL_SETTINGS.printSettings, ...(parsed.printSettings || {}) },
+          documentTemplates: { ...INITIAL_SETTINGS.documentTemplates, ...(parsed.documentTemplates || {}) },
+          accountingConfig: { ...INITIAL_SETTINGS.accountingConfig, ...(parsed.accountingConfig || {}) },
+          inventoryConfig: { ...INITIAL_SETTINGS.inventoryConfig, ...(parsed.inventoryConfig || {}) },
+          reportConfig: { ...INITIAL_SETTINGS.reportConfig, ...(parsed.reportConfig || {}) },
+          appearanceConfig: { ...INITIAL_SETTINGS.appearanceConfig, ...(parsed.appearanceConfig || {}) },
+        };
       } catch {
         return INITIAL_SETTINGS;
       }
@@ -436,25 +484,105 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return saved ? JSON.parse(saved) : INITIAL_CURRENCIES;
   });
 
-  // LocalStorage Sync
+  // Onyx Pro Users & Role Management
+  const [users, setUsers] = useState<SystemUser[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return [
+      {
+        id: 'usr-admin',
+        name: 'مدير النظام (أدمن)',
+        username: 'admin',
+        role: 'ADMIN',
+        phone: '0555555555',
+        active: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-accountant',
+        name: 'المحاسب المالي',
+        username: 'accountant',
+        role: 'ACCOUNTANT',
+        phone: '0555555556',
+        active: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-cashier',
+        name: 'كاشير نقطة البيع',
+        username: 'cashier',
+        role: 'CASHIER',
+        phone: '0555555557',
+        active: true,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'usr-storekeeper',
+        name: 'أمين المستودع والمخازن',
+        username: 'storekeeper',
+        role: 'STOREKEEPER',
+        phone: '0555555558',
+        active: true,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+  });
+
+  const [currentUser, setCurrentUser] = useState<SystemUser>(() => {
+    const savedId = localStorage.getItem(`${STORAGE_KEY}_current_user_id`);
+    const found = users.find((u) => u.id === savedId);
+    return found || users[0];
+  });
+
+  // Onyx Pro Audit Trail Log
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_audit_logs`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Bank & Cash Reconciliations
+  const [reconciliations, setReconciliations] = useState<BankReconciliationRecord[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_reconciliations`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Debounced, Non-blocking LocalStorage Sync for Maximum Performance & Lightning Speed
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_settings`, JSON.stringify(settings));
-    localStorage.setItem(`${STORAGE_KEY}_currencies`, JSON.stringify(currencies));
-    localStorage.setItem(`${STORAGE_KEY}_branches`, JSON.stringify(branches));
-    localStorage.setItem(`${STORAGE_KEY}_warehouses`, JSON.stringify(warehouses));
-    localStorage.setItem(`${STORAGE_KEY}_cost_centers`, JSON.stringify(costCenters));
-    localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(accounts));
-    localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(products));
-    localStorage.setItem(`${STORAGE_KEY}_contacts`, JSON.stringify(contacts));
-    localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify(invoices));
-    localStorage.setItem(`${STORAGE_KEY}_quotations`, JSON.stringify(quotations));
-    localStorage.setItem(`${STORAGE_KEY}_returns`, JSON.stringify(returnInvoices));
-    localStorage.setItem(`${STORAGE_KEY}_transfers`, JSON.stringify(stockTransfers));
-    localStorage.setItem(`${STORAGE_KEY}_receipt_notes`, JSON.stringify(stockReceiptNotes));
-    localStorage.setItem(`${STORAGE_KEY}_vouchers`, JSON.stringify(vouchers));
-    localStorage.setItem(`${STORAGE_KEY}_journal`, JSON.stringify(journalEntries));
-    localStorage.setItem(`${STORAGE_KEY}_stock_movements`, JSON.stringify(stockMovements));
-    localStorage.setItem(`${STORAGE_KEY}_stock_adjustments`, JSON.stringify(stockAdjustments));
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_settings`, JSON.stringify(settings));
+        localStorage.setItem(`${STORAGE_KEY}_currencies`, JSON.stringify(currencies));
+        localStorage.setItem(`${STORAGE_KEY}_branches`, JSON.stringify(branches));
+        localStorage.setItem(`${STORAGE_KEY}_warehouses`, JSON.stringify(warehouses));
+        localStorage.setItem(`${STORAGE_KEY}_cost_centers`, JSON.stringify(costCenters));
+        localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(accounts));
+        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(products));
+        localStorage.setItem(`${STORAGE_KEY}_contacts`, JSON.stringify(contacts));
+        localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify(invoices));
+        localStorage.setItem(`${STORAGE_KEY}_quotations`, JSON.stringify(quotations));
+        localStorage.setItem(`${STORAGE_KEY}_returns`, JSON.stringify(returnInvoices));
+        localStorage.setItem(`${STORAGE_KEY}_transfers`, JSON.stringify(stockTransfers));
+        localStorage.setItem(`${STORAGE_KEY}_receipt_notes`, JSON.stringify(stockReceiptNotes));
+        localStorage.setItem(`${STORAGE_KEY}_vouchers`, JSON.stringify(vouchers));
+        localStorage.setItem(`${STORAGE_KEY}_journal`, JSON.stringify(journalEntries));
+        localStorage.setItem(`${STORAGE_KEY}_stock_movements`, JSON.stringify(stockMovements));
+        localStorage.setItem(`${STORAGE_KEY}_stock_adjustments`, JSON.stringify(stockAdjustments));
+        localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
+        localStorage.setItem(`${STORAGE_KEY}_current_user_id`, currentUser?.id || 'usr-admin');
+        localStorage.setItem(`${STORAGE_KEY}_audit_logs`, JSON.stringify(auditLogs));
+        localStorage.setItem(`${STORAGE_KEY}_reconciliations`, JSON.stringify(reconciliations));
+      } catch (err) {
+        console.warn('Storage sync warning:', err);
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
   }, [
     settings,
     currencies,
@@ -473,6 +601,10 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     journalEntries,
     stockMovements,
     stockAdjustments,
+    users,
+    currentUser,
+    auditLogs,
+    reconciliations,
   ]);
 
   // Inventory & COGS Summary
@@ -1148,9 +1280,10 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
    * Action: Create Voucher
    */
   const createVoucher = (data: {
-    type: 'RECEIPT' | 'PAYMENT';
+    type: VoucherType;
     accountId: string;
     partyAccountId: string;
+    toAccountId?: string;
     amount: number;
     currency?: string;
     exchangeRate?: number;
@@ -1160,6 +1293,19 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     contactId?: string;
     branchId?: string;
   }): Voucher => {
+    if (data.type === 'TRANSFER') {
+      return createTransferVoucher({
+        fromAccountId: data.accountId,
+        toAccountId: data.toAccountId || data.partyAccountId,
+        amount: data.amount,
+        currency: data.currency,
+        exchangeRate: data.exchangeRate,
+        description: data.description,
+        referenceNumber: data.referenceNumber,
+        branchId: data.branchId,
+      });
+    }
+
     const count = vouchers.filter((v) => v.type === data.type).length + 1;
     const prefix = data.type === 'RECEIPT' ? 'RCV' : 'PAY';
     const voucherNum = `${prefix}-${String(count).padStart(4, '0')}`;
@@ -1214,6 +1360,429 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setAccounts(updatedAccounts);
 
     return newVoucher;
+  };
+
+  /**
+   * Action: Audit Log helper
+   */
+  const addAuditLog = (
+    action: AuditLogEntry['action'],
+    module: string,
+    details: string,
+    entityId?: string,
+    entityNumber?: string
+  ) => {
+    const newEntry: AuditLogEntry = {
+      id: generateId('audit'),
+      timestamp: new Date().toISOString(),
+      userName: currentUser?.name || 'مدير النظام',
+      userRole: currentUser?.role || 'ADMIN',
+      action,
+      module,
+      entityId,
+      entityNumber,
+      details,
+    };
+    setAuditLogs((prev) => [newEntry, ...prev.slice(0, 999)]);
+  };
+
+  /**
+   * Action: Add & Update User
+   */
+  const addUser = (userData: Omit<SystemUser, 'id' | 'createdAt'>): SystemUser => {
+    const newUser: SystemUser = {
+      id: generateId('usr'),
+      ...userData,
+      createdAt: new Date().toISOString(),
+    };
+    setUsers((prev) => [...prev, newUser]);
+    addAuditLog('CREATE', 'إدارة المستخدمين', `إضافة مستخدم جديد: ${newUser.name} (${newUser.role})`);
+    showToast(`تمت إضافة المستخدم "${newUser.name}" بنجاح`, 'success');
+    return newUser;
+  };
+
+  const updateUser = (id: string, updates: Partial<SystemUser>) => {
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === id) {
+          const updated = { ...u, ...updates };
+          if (currentUser?.id === id) setCurrentUser(updated);
+          return updated;
+        }
+        return u;
+      })
+    );
+    addAuditLog('UPDATE', 'إدارة المستخدمين', `تحديث بيانات المستخدم ID: ${id}`);
+    showToast('تم تحديث بيانات المستخدم بنجاح', 'success');
+  };
+
+  /**
+   * Action: Bank & Cash Reconciliation
+   */
+  const addReconciliation = (recordData: Omit<BankReconciliationRecord, 'id' | 'createdAt'>): BankReconciliationRecord => {
+    const newRec: BankReconciliationRecord = {
+      id: generateId('rec'),
+      ...recordData,
+      createdAt: new Date().toISOString(),
+    };
+    setReconciliations((prev) => [newRec, ...prev]);
+    addAuditLog('RECONCILE', 'الخزينة والبنوك', `تسوية بنكية للحساب: ${newRec.accountId} بفارق: ${newRec.difference.toFixed(2)}`);
+    showToast('تم حفظ التسوية البنكية بنجاح', 'success');
+    return newRec;
+  };
+
+  /**
+   * Action: Create Inter-Account Transfer Voucher (سند تحويل بين الحسابات والصناديق)
+   */
+  const createTransferVoucher = (data: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    currency?: string;
+    exchangeRate?: number;
+    description: string;
+    referenceNumber?: string;
+    branchId?: string;
+  }): Voucher => {
+    const count = vouchers.filter((v) => v.type === 'TRANSFER').length + 1;
+    const voucherNum = `TRF-${String(count).padStart(4, '0')}`;
+    const fromAcc = accounts.find((a) => a.id === data.fromAccountId);
+    const toAcc = accounts.find((a) => a.id === data.toAccountId);
+
+    const selectedCurr = data.currency || settings.baseCurrency;
+    const rate = data.exchangeRate ?? (currencies.find((c) => c.code === selectedCurr)?.rate || 1.0);
+    const amountBase = Math.round(data.amount * rate * 100) / 100;
+
+    const newVoucher: Voucher = {
+      id: generateId('vouch'),
+      voucherNumber: voucherNum,
+      type: 'TRANSFER',
+      date: new Date().toISOString().split('T')[0],
+      branchId: data.branchId || selectedBranchId,
+      accountId: data.fromAccountId,
+      accountName: fromAcc?.nameAr || 'الحساب المحول منه',
+      partyAccountId: data.toAccountId,
+      partyAccountName: toAcc?.nameAr || 'الحساب المحول إليه',
+      toAccountId: data.toAccountId,
+      toAccountName: toAcc?.nameAr || 'الحساب المحول إليه',
+      amount: data.amount,
+      currency: selectedCurr,
+      exchangeRate: rate,
+      amountBase,
+      paymentMethod: 'CASH',
+      referenceNumber: data.referenceNumber,
+      description: data.description || `تحويل مالي بين الحسابات من ${fromAcc?.nameAr} إلى ${toAcc?.nameAr}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    const journalEntry = generateVoucherJournal(newVoucher, accounts);
+    newVoucher.journalEntryId = journalEntry.id;
+
+    const updatedJournalEntries = [journalEntry, ...journalEntries];
+    const updatedAccounts = recalculateAllAccountBalances(accounts, updatedJournalEntries);
+
+    setVouchers((prev) => [newVoucher, ...prev]);
+    setJournalEntries(updatedJournalEntries);
+    setAccounts(updatedAccounts);
+
+    addAuditLog('TRANSFER', 'الخزينة والبنوك', `سند تحويل ${voucherNum} بمبلغ ${data.amount} من ${fromAcc?.nameAr} إلى ${toAcc?.nameAr}`, newVoucher.id, voucherNum);
+    showToast(`تم إنشاء سند التحويل ${voucherNum} وترحيل القيد بنجاح ✓`, 'success');
+
+    return newVoucher;
+  };
+
+  /**
+   * Action: BOM Assembly (تجميع صنف مركب)
+   */
+  const assembleProduct = (productId: string, quantity: number, notes?: string): { success: boolean; message: string } => {
+    if (quantity <= 0) return { success: false, message: 'الكمية يجب أن تكون أكبر من صفر' };
+    const compositeProd = products.find((p) => p.id === productId);
+    if (!compositeProd) return { success: false, message: 'الصنف غير موجود' };
+    if (!compositeProd.isComposite || !compositeProd.components || compositeProd.components.length === 0) {
+      return { success: false, message: 'هذا الصنف ليس صنفاً مركباً أو لا توجد له مكونات محددة' };
+    }
+
+    for (const comp of compositeProd.components) {
+      const compProd = products.find((p) => p.id === comp.productId);
+      const neededQty = comp.quantity * quantity;
+      if (!compProd || compProd.stockQty < neededQty) {
+        return {
+          success: false,
+          message: `المخزون غير كافٍ للمكون: ${comp.productName || compProd?.nameAr || comp.productId}. المطلوب: ${neededQty} والمتوفر: ${compProd?.stockQty || 0}`,
+        };
+      }
+    }
+
+    let updatedProducts = [...products];
+    const newMovements: StockMovement[] = [];
+    const dateNow = new Date().toISOString().split('T')[0];
+    const refNum = `ASM-${Date.now().toString().slice(-6)}`;
+
+    compositeProd.components.forEach((comp) => {
+      const pIdx = updatedProducts.findIndex((p) => p.id === comp.productId);
+      if (pIdx !== -1) {
+        const prod = updatedProducts[pIdx];
+        const consumed = comp.quantity * quantity;
+        const newBalance = prod.stockQty - consumed;
+        updatedProducts[pIdx] = { ...prod, stockQty: newBalance };
+
+        newMovements.push({
+          id: generateId('sm'),
+          productId: prod.id,
+          productName: prod.nameAr,
+          type: 'ASSEMBLY_OUT',
+          referenceNumber: refNum,
+          date: dateNow,
+          quantityChange: -consumed,
+          unitCost: prod.costPrice,
+          totalCost: consumed * prod.costPrice,
+          balanceAfter: newBalance,
+          notes: `استهلاك مكونات لتجميع الصنف المركب ${compositeProd.nameAr} (عدد ${quantity})`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    const cIdx = updatedProducts.findIndex((p) => p.id === compositeProd.id);
+    if (cIdx !== -1) {
+      const prod = updatedProducts[cIdx];
+      const newBalance = prod.stockQty + quantity;
+      updatedProducts[cIdx] = { ...prod, stockQty: newBalance };
+
+      newMovements.push({
+        id: generateId('sm'),
+        productId: prod.id,
+        productName: prod.nameAr,
+        type: 'ASSEMBLY_IN',
+        referenceNumber: refNum,
+        date: dateNow,
+        quantityChange: quantity,
+        unitCost: prod.costPrice,
+        totalCost: quantity * prod.costPrice,
+        balanceAfter: newBalance,
+        notes: `تجميع صنف مركب: ${compositeProd.nameAr} (عدد ${quantity}) ${notes ? ` - ${notes}` : ''}`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    setProducts(updatedProducts);
+    setStockMovements((prev) => [...newMovements, ...prev]);
+
+    addAuditLog('ASSEMBLE', 'إدارة المخزون', `تجميع ${quantity} وحدة من الصنف المركب: ${compositeProd.nameAr}`, compositeProd.id, refNum);
+    showToast(`تم تجميع ${quantity} وحدة من "${compositeProd.nameAr}" وترحيل المخزون بنجاح ✓`, 'success');
+
+    return { success: true, message: `تم تجميع عدد ${quantity} من "${compositeProd.nameAr}" بنجاح` };
+  };
+
+  /**
+   * Action: BOM Disassembly (تفكيك صنف مركب)
+   */
+  const disassembleProduct = (productId: string, quantity: number, notes?: string): { success: boolean; message: string } => {
+    if (quantity <= 0) return { success: false, message: 'الكمية يجب أن تكون أكبر من صفر' };
+    const compositeProd = products.find((p) => p.id === productId);
+    if (!compositeProd) return { success: false, message: 'الصنف غير موجود' };
+    if (compositeProd.stockQty < quantity) {
+      return { success: false, message: `رصيد الصنف المركب غير كافٍ للتفكيك. المتوفر: ${compositeProd.stockQty}` };
+    }
+    if (!compositeProd.components || compositeProd.components.length === 0) {
+      return { success: false, message: 'لا توجد مكونات مسجلة لهذا الصنف' };
+    }
+
+    let updatedProducts = [...products];
+    const newMovements: StockMovement[] = [];
+    const dateNow = new Date().toISOString().split('T')[0];
+    const refNum = `DIS-${Date.now().toString().slice(-6)}`;
+
+    const cIdx = updatedProducts.findIndex((p) => p.id === compositeProd.id);
+    if (cIdx !== -1) {
+      const prod = updatedProducts[cIdx];
+      const newBalance = prod.stockQty - quantity;
+      updatedProducts[cIdx] = { ...prod, stockQty: newBalance };
+
+      newMovements.push({
+        id: generateId('sm'),
+        productId: prod.id,
+        productName: prod.nameAr,
+        type: 'ASSEMBLY_OUT',
+        referenceNumber: refNum,
+        date: dateNow,
+        quantityChange: -quantity,
+        unitCost: prod.costPrice,
+        totalCost: quantity * prod.costPrice,
+        balanceAfter: newBalance,
+        notes: `تفكيك صنف مركب: ${compositeProd.nameAr} (عدد ${quantity})`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    compositeProd.components.forEach((comp) => {
+      const pIdx = updatedProducts.findIndex((p) => p.id === comp.productId);
+      if (pIdx !== -1) {
+        const prod = updatedProducts[pIdx];
+        const recovered = comp.quantity * quantity;
+        const newBalance = prod.stockQty + recovered;
+        updatedProducts[pIdx] = { ...prod, stockQty: newBalance };
+
+        newMovements.push({
+          id: generateId('sm'),
+          productId: prod.id,
+          productName: prod.nameAr,
+          type: 'ASSEMBLY_IN',
+          referenceNumber: refNum,
+          date: dateNow,
+          quantityChange: recovered,
+          unitCost: prod.costPrice,
+          totalCost: recovered * prod.costPrice,
+          balanceAfter: newBalance,
+          notes: `إرجاع مكونات من تفكيك ${compositeProd.nameAr} (عدد ${quantity})`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    setProducts(updatedProducts);
+    setStockMovements((prev) => [...newMovements, ...prev]);
+
+    addAuditLog('DISASSEMBLE', 'إدارة المخزون', `تفكيك ${quantity} وحدة من الصنف المركب: ${compositeProd.nameAr}`, compositeProd.id, refNum);
+    showToast(`تم تفكيك ${quantity} وحدة وإرجاع المكونات للمخزون بنجاح ✓`, 'success');
+
+    return { success: true, message: `تم تفكيك ${quantity} وحدة بنجاح` };
+  };
+
+  /**
+   * Action: Clone Invoice (نسخ الفاتورة)
+   */
+  const cloneInvoice = (invoiceId: string): Invoice | null => {
+    const original = invoices.find((inv) => inv.id === invoiceId);
+    if (!original) return null;
+    const isSales = original.type === 'SALES';
+    const prefix = isSales ? 'INV' : 'PUR';
+    const newNum = `${prefix}-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, '0')}`;
+    const cloned: Invoice = {
+      ...original,
+      id: generateId('inv'),
+      invoiceNumber: newNum,
+      date: new Date().toISOString().split('T')[0],
+      workflowStatus: 'DRAFT',
+      journalEntryId: undefined,
+      createdAt: new Date().toISOString(),
+    };
+    setInvoices((prev) => [cloned, ...prev]);
+    addAuditLog('CREATE', 'الفواتير', `نسخ الفاتورة ${original.invoiceNumber} إلى الفاتورة الجديدة ${newNum}`, cloned.id, newNum);
+    showToast(`تم إنشاء نسخة جديدة من الفاتورة برقم ${newNum} كمسودة ✓`, 'success');
+    return cloned;
+  };
+
+  /**
+   * Action: Clone Quotation (نسخ عرض السعر)
+   */
+  const cloneQuotation = (quoteId: string): Quotation | null => {
+    const original = quotations.find((q) => q.id === quoteId);
+    if (!original) return null;
+    const newNum = `QUO-${new Date().getFullYear()}-${String(quotations.length + 1).padStart(4, '0')}`;
+    const cloned: Quotation = {
+      ...original,
+      id: generateId('quote'),
+      quoteNumber: newNum,
+      date: new Date().toISOString().split('T')[0],
+      status: 'DRAFT',
+      convertedInvoiceId: undefined,
+      createdAt: new Date().toISOString(),
+    };
+    setQuotations((prev) => [cloned, ...prev]);
+    addAuditLog('CREATE', 'عروض الأسعار', `نسخ عرض السعر ${original.quoteNumber} إلى ${newNum}`, cloned.id, newNum);
+    showToast(`تم نسخ عرض السعر برقم ${newNum} كمسودة بنجاح ✓`, 'success');
+    return cloned;
+  };
+
+  /**
+   * Action: Void Invoice (إلغاء الفاتورة بقيد عكسي وإعادة المخزون وفق أونكس برو)
+   */
+  const voidInvoice = (invoiceId: string, reason: string): boolean => {
+    const invoice = invoices.find((inv) => inv.id === invoiceId);
+    if (!invoice) return false;
+    if (invoice.workflowStatus === 'VOID') {
+      showToast('هذه الفاتورة ملغية بالفعل', 'error');
+      return false;
+    }
+
+    const updatedInvoices = invoices.map((inv) =>
+      inv.id === invoiceId ? { ...inv, workflowStatus: 'VOID' as const, notes: `${inv.notes || ''} [ملغية: ${reason}]` } : inv
+    );
+
+    const updatedProducts = [...products];
+    const reversingMovements: StockMovement[] = [];
+    const dateNow = new Date().toISOString().split('T')[0];
+
+    invoice.items.forEach((item) => {
+      const pIdx = updatedProducts.findIndex((p) => p.id === item.productId);
+      if (pIdx !== -1) {
+        const prod = updatedProducts[pIdx];
+        const reverseDelta = invoice.type === 'SALES' ? item.quantity : -item.quantity;
+        const newBalance = prod.stockQty + reverseDelta;
+        updatedProducts[pIdx] = { ...prod, stockQty: newBalance };
+
+        reversingMovements.push({
+          id: generateId('sm'),
+          productId: prod.id,
+          productName: prod.nameAr,
+          type: invoice.type === 'SALES' ? 'SALES_RETURN' : 'PURCHASE_RETURN',
+          referenceNumber: `VOID-${invoice.invoiceNumber}`,
+          date: dateNow,
+          quantityChange: reverseDelta,
+          unitCost: item.costPrice,
+          totalCost: Math.abs(reverseDelta) * item.costPrice,
+          balanceAfter: newBalance,
+          notes: `إلغاء قيد فاتورة ${invoice.invoiceNumber}: ${reason}`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    });
+
+    let updatedJournalEntries = [...journalEntries];
+    if (invoice.journalEntryId) {
+      const originalEntry = journalEntries.find((j) => j.id === invoice.journalEntryId);
+      if (originalEntry) {
+        const reversedLines = originalEntry.lines.map((l) => ({
+          ...l,
+          id: generateId('line'),
+          debit: l.credit,
+          credit: l.debit,
+          memo: `عكس قيد: ${l.memo || ''}`,
+        }));
+        const reversingEntry: JournalEntry = {
+          id: generateId('je'),
+          entryNumber: `REV-${originalEntry.entryNumber}`,
+          date: dateNow,
+          description: `قيد عكسي لإلغاء الفاتورة ${invoice.invoiceNumber} - ${reason}`,
+          sourceType: 'PERIOD_CLOSING',
+          sourceId: invoice.id,
+          lines: reversedLines,
+          totalDebit: originalEntry.totalCredit,
+          totalCredit: originalEntry.totalDebit,
+          isBalanced: true,
+          isPosted: true,
+          branchId: invoice.branchId,
+          currency: invoice.currency,
+          exchangeRate: invoice.exchangeRate,
+          createdAt: new Date().toISOString(),
+        };
+        updatedJournalEntries = [reversingEntry, ...updatedJournalEntries];
+      }
+    }
+
+    const updatedAccounts = recalculateAllAccountBalances(accounts, updatedJournalEntries);
+
+    setInvoices(updatedInvoices);
+    setProducts(updatedProducts);
+    setStockMovements((prev) => [...reversingMovements, ...prev]);
+    setJournalEntries(updatedJournalEntries);
+    setAccounts(updatedAccounts);
+
+    addAuditLog('VOID', 'الفواتير', `إلغاء الفاتورة ${invoice.invoiceNumber} مع إنشاء قيد عكسي: ${reason}`, invoice.id, invoice.invoiceNumber);
+    showToast(`تم إلغاء الفاتورة ${invoice.invoiceNumber} وإنشاء القيد العكسي بنجاح ✓`, 'success');
+
+    return true;
   };
 
   /**
@@ -1577,8 +2146,15 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const addBranch = (b: Omit<Branch, 'id'>): Branch => {
-    const newBranch: Branch = { ...b, id: generateId('br') };
+    const isFirst = branches.length === 0;
+    const newBranch: Branch = {
+      ...b,
+      id: generateId('br'),
+      isMain: isFirst ? true : (b.isMain ?? false),
+      nameAr: b.nameAr?.trim() || (isFirst ? 'المركز الرئيسي' : `فرع ${branches.length + 1}`),
+    };
     setBranches((prev) => [...prev, newBranch]);
+    setSelectedBranchId(newBranch.id);
     return newBranch;
   };
 
@@ -1866,6 +2442,21 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         closeDeleteConfirm,
         branchActionModal,
         setBranchActionModal,
+        createTransferVoucher,
+        assembleProduct,
+        disassembleProduct,
+        cloneInvoice,
+        cloneQuotation,
+        voidInvoice,
+        users,
+        currentUser,
+        setCurrentUser,
+        addUser,
+        updateUser,
+        auditLogs,
+        addAuditLog,
+        reconciliations,
+        addReconciliation,
       }}
     >
       {children}
