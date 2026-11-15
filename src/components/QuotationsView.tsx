@@ -20,6 +20,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { Quotation, Product, PriceTier } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout } from './UnifiedDocumentLayout';
 import { FreeNumberInput } from './FreeNumberInput';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { ProductQuickSearchModal } from './ProductQuickSearchModal';
@@ -560,8 +561,8 @@ export const QuotationsView: React.FC = () => {
 
       {/* CREATE QUOTE MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90dvh] my-auto overscroll-contain overflow-hidden">
             <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <FileText className="w-5 h-5 text-emerald-400" />
@@ -586,7 +587,7 @@ export const QuotationsView: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSaveQuote} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-8 touch-pan-y">
+            <form onSubmit={handleSaveQuote} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-6 sm:pb-8 touch-pan-y">
               {/* Customer Selection: Registered Account vs Free-Text Custom Name */}
               <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/80 pb-2.5">
@@ -973,8 +974,8 @@ export const QuotationsView: React.FC = () => {
 
       {/* PREVIEW QUOTE MODAL */}
       {previewQuote && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto no-print-bg">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden print-only-wrapper">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm">عرض سعر: {previewQuote.quoteNumber}</span>
@@ -1005,75 +1006,58 @@ export const QuotationsView: React.FC = () => {
               </div>
             </div>
 
-            <div id="quotation-print-content" className="p-8 text-right printable-card text-xs space-y-4">
-              <div className="text-center border-b-2 border-slate-900 pb-3">
-                <h3 className="text-lg font-black">{settings.companyName}</h3>
-                <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-                <div className="inline-block mt-2 px-3 py-0.5 rounded-full bg-slate-900 text-white font-extrabold text-sm">
-                  عرض سعر تجاري (Price Quotation)
+            <div id="quotation-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle="عرض أسعار تجاري معتمد"
+                documentSubtitle="Commercial Price Quotation"
+                documentNumber={previewQuote.quoteNumber}
+                documentDate={previewQuote.date}
+                documentTypeBadge="عرض سعر رسمي"
+                partyLabel="العميل المستهدف"
+                partyName={previewQuote.partyName}
+                partyTaxNumber={contacts.find(c => c.name === previewQuote.partyName)?.taxNumber}
+                partyPhone={contacts.find(c => c.name === previewQuote.partyName)?.phone}
+                partyAddress={contacts.find(c => c.name === previewQuote.partyName)?.address}
+                currency={previewQuote.currency || settings.baseCurrency}
+                subtotal={previewQuote.subtotal}
+                discount={previewQuote.items.reduce((s, i) => s + (i.discount || 0), 0)}
+                taxTotal={previewQuote.taxTotal}
+                grandTotal={previewQuote.grandTotal}
+                notes={previewQuote.notes}
+                customMeta={[
+                  { label: 'ساري حتى تاريخ', value: <span className="font-mono font-bold text-amber-700">{previewQuote.validUntil}</span> },
+                  { label: 'حالة العرض', value: previewQuote.status === 'CONVERTED' ? 'تم التحويل لفاتورة' : 'عرض ساري' }
+                ]}
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                    <thead>
+                      <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">الصنف والوصف</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">سعر الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewQuote.items.map((it, idx) => (
+                        <tr key={it.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl">
-                <div>
-                  <div><span className="font-bold">رقم العرض:</span> {previewQuote.quoteNumber}</div>
-                  <div><span className="font-bold">تاريخ الإصدار:</span> {previewQuote.date}</div>
-                  <div><span className="font-bold">ساري المفعول حتى:</span> {previewQuote.validUntil}</div>
-                </div>
-                <div>
-                  <div><span className="font-bold">مقدم إلى العميل:</span> {previewQuote.partyName}</div>
-                  <div><span className="font-bold">الحالة:</span> {previewQuote.status === 'CONVERTED' ? 'معتمد' : 'مقدم'}</div>
-                </div>
-              </div>
-
-              <table className="w-full text-right border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-900 bg-slate-200">
-                    <th className="py-2 px-2">م</th>
-                    <th className="py-2 px-2">الصنف والوصف</th>
-                    <th className="py-2 px-2 text-center">الكمية</th>
-                    <th className="py-2 px-2 text-center">سعر الوحدة</th>
-                    <th className="py-2 px-2 text-center">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300">
-                  {previewQuote.items.map((it, idx) => (
-                    <tr key={it.id}>
-                      <td className="py-2 px-2 font-mono-num">{idx + 1}</td>
-                      <td className="py-2 px-2 font-bold">{it.productName}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="border-t-2 border-slate-900 pt-3 flex justify-between">
-                <div className="text-xs text-slate-600 max-w-xs">
-                  <div className="font-bold mb-1">الشروط والأحكام:</div>
-                  <div>{previewQuote.notes}</div>
-                </div>
-                <div className="w-48 space-y-1 font-mono-num text-xs">
-                  <div className="flex justify-between">
-                    <span>المجموع:</span>
-                    <span>{previewQuote.subtotal.toFixed(2)} {previewQuote.currency || settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>الضريبة:</span>
-                    <span>{previewQuote.taxTotal.toFixed(2)} {previewQuote.currency || settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                    <span>الإجمالي الشامل:</span>
-                    <span>{previewQuote.grandTotal.toFixed(2)} {previewQuote.currency || settings.baseCurrency}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-                <span className="font-bold">المبلغ كتابة:</span>{' '}
-                {tafqeet(previewQuote.grandTotal, previewQuote.currency || settings.baseCurrency, 'هللة')}
-              </div>
+              </UnifiedDocumentLayout>
             </div>
           </div>
         </div>
@@ -1081,73 +1065,58 @@ export const QuotationsView: React.FC = () => {
 
       {/* Hidden Print Container for the Active Selected Quotation (Used by top action bar) */}
       {activeQuote && (
-        <div id="selected-quote-document-card" className="hidden print:block printable-card p-8 text-right text-xs space-y-4">
-          <div className="text-center border-b-2 border-slate-900 pb-3">
-            <h3 className="text-lg font-black text-slate-900">{settings.companyName}</h3>
-            <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-            <div className="font-bold text-sm text-slate-900 mt-2">عرض سعر تجاري معتمد (Quotation)</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl text-slate-900">
-            <div>
-              <div><span className="font-bold">رقم العرض:</span> {activeQuote.quoteNumber}</div>
-              <div><span className="font-bold">تاريخ الإصدار:</span> {activeQuote.date}</div>
-              <div><span className="font-bold text-amber-700">ساري حتى:</span> {activeQuote.validUntil}</div>
+        <div id="selected-quote-document-card" className="hidden print:block printable-card p-2 sm:p-4 text-right">
+          <UnifiedDocumentLayout
+            documentTitle="عرض أسعار تجاري معتمد"
+            documentSubtitle="Commercial Price Quotation"
+            documentNumber={activeQuote.quoteNumber}
+            documentDate={activeQuote.date}
+            documentTypeBadge="عرض سعر رسمي"
+            partyLabel="العميل المستهدف"
+            partyName={activeQuote.partyName}
+            partyTaxNumber={contacts.find(c => c.name === activeQuote.partyName)?.taxNumber}
+            partyPhone={contacts.find(c => c.name === activeQuote.partyName)?.phone}
+            partyAddress={contacts.find(c => c.name === activeQuote.partyName)?.address}
+            currency={activeQuote.currency || settings.baseCurrency}
+            subtotal={activeQuote.subtotal}
+            discount={activeQuote.items.reduce((s, i) => s + (i.discount || 0), 0)}
+            taxTotal={activeQuote.taxTotal}
+            grandTotal={activeQuote.grandTotal}
+            notes={activeQuote.notes}
+            customMeta={[
+              { label: 'ساري حتى تاريخ', value: <span className="font-mono font-bold text-amber-700">{activeQuote.validUntil}</span> },
+              { label: 'حالة العرض', value: activeQuote.status === 'CONVERTED' ? 'تم التحويل لفاتورة' : 'عرض ساري' }
+            ]}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                <thead>
+                  <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                    <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                    <th className="py-2 px-2 border border-slate-400">الصنف والوصف</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">سعر الوحدة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-300">
+                  {activeQuote.items.map((it, idx) => (
+                    <tr key={it.id} className="hover:bg-slate-50">
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                      <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <div><span className="font-bold">العميل المستهدف:</span> {activeQuote.partyName}</div>
-              <div><span className="font-bold">العملة:</span> {activeQuote.currency || settings.baseCurrency}</div>
-            </div>
-          </div>
-
-          <table className="w-full text-right border-collapse text-xs text-slate-900">
-            <thead>
-              <tr className="border-b-2 border-slate-900 bg-slate-200">
-                <th className="py-2 px-2">#</th>
-                <th className="py-2 px-2">الصنف</th>
-                <th className="py-2 px-2 text-center">الكمية</th>
-                <th className="py-2 px-2 text-center">سعر الوحدة</th>
-                <th className="py-2 px-2 text-center">الإجمالي</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-300">
-              {activeQuote.items.map((it, idx) => (
-                <tr key={it.id}>
-                  <td className="py-2 px-2 font-mono-num">{idx + 1}</td>
-                  <td className="py-2 px-2 font-bold">{it.productName}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="border-t-2 border-slate-900 pt-3 flex justify-between text-slate-900">
-            <div className="text-xs text-slate-600 max-w-xs">
-              <div className="font-bold mb-1">الشروط والأحكام:</div>
-              <div>{activeQuote.notes}</div>
-            </div>
-            <div className="w-48 space-y-1 font-mono-num text-xs">
-              <div className="flex justify-between">
-                <span>المجموع:</span>
-                <span>{activeQuote.subtotal.toFixed(2)} {activeQuote.currency || settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>الضريبة:</span>
-                <span>{activeQuote.taxTotal.toFixed(2)} {activeQuote.currency || settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                <span>الإجمالي الشامل:</span>
-                <span>{activeQuote.grandTotal.toFixed(2)} {activeQuote.currency || settings.baseCurrency}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-            <span className="font-bold">المبلغ كتابة:</span>{' '}
-            {tafqeet(activeQuote.grandTotal, activeQuote.currency || settings.baseCurrency, 'هللة')}
-          </div>
+          </UnifiedDocumentLayout>
         </div>
       )}
 

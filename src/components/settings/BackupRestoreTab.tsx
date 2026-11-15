@@ -14,6 +14,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { Account, Invoice, Product, Contact, Voucher, JournalEntry } from '../../types/accounting';
+import { useAuth } from '../../context/AuthContext';
 
 interface BackupRestoreTabProps {
   exportDatabaseJson: () => string;
@@ -40,6 +41,12 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
   journalEntries,
   showToast,
 }) => {
+  const { authUser, tenantCode } = useAuth();
+  const uidPrefix = authUser?.uid ? `alghafari_tenant_${authUser.uid}` : 'alghafari_guest';
+  const SNAPSHOT_KEY = `${uidPrefix}_safety_snapshot_before_restore`;
+  const SNAPSHOT_DATE_KEY = `${uidPrefix}_safety_snapshot_date`;
+  const LAST_BACKUP_KEY = `${uidPrefix}_last_backup_date`;
+
   // Safety confirmation dialogs
   const [showConfirmRestoreModal, setShowConfirmRestoreModal] = useState(false);
   const [pendingFileContent, setPendingFileContent] = useState<string | null>(null);
@@ -54,9 +61,9 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
   const [showResetSecurityModal, setShowResetSecurityModal] = useState(false);
   const [confirmationPhrase, setConfirmationPhrase] = useState('');
 
-  // Check if a safety snapshot exists
-  const hasSafetySnapshot = Boolean(localStorage.getItem('alghafari_safety_snapshot_before_restore'));
-  const lastBackupDate = localStorage.getItem('alghafari_last_backup_date') || 'لم يتم تصدير نسخة بعد';
+  // Check if a safety snapshot exists strictly for this user's isolated UID
+  const hasSafetySnapshot = Boolean(localStorage.getItem(SNAPSHOT_KEY));
+  const lastBackupDate = localStorage.getItem(LAST_BACKUP_KEY) || 'لم يتم تصدير نسخة بعد';
 
   // Calculate approximate database size in KB
   const totalRecords =
@@ -77,13 +84,13 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
     const link = document.createElement('a');
     const dateStr = new Date().toISOString().split('T')[0];
     link.href = url;
-    link.download = `alghafari_soft_pro_backup_${dateStr}.json`;
+    link.download = `alghafari_soft_pro_${tenantCode || 'account'}_backup_${dateStr}.json`;
     link.click();
     URL.revokeObjectURL(url);
 
     const nowFormatted = new Date().toLocaleString('ar-SA');
-    localStorage.setItem('alghafari_last_backup_date', nowFormatted);
-    showToast('تم تصدير وتنزيل النسخة الاحتياطية بنجاح ✓', 'success');
+    localStorage.setItem(LAST_BACKUP_KEY, nowFormatted);
+    showToast('تم تصدير وتنزيل النسخة الاحتياطية الخاصة بحسابك بنجاح ✓', 'success');
   };
 
   // 2. Select file & Validate
@@ -126,18 +133,17 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
     if (!pendingFileContent) return;
 
     try {
-      // Step A: Create safety snapshot of CURRENT state first!
+      // Step A: Create safety snapshot of CURRENT isolated account state first!
       const currentSnapshot = exportDatabaseJson();
-      localStorage.setItem('alghafari_safety_snapshot_before_restore', currentSnapshot);
-      localStorage.setItem('alghafari_safety_snapshot_date', new Date().toLocaleString('ar-SA'));
+      localStorage.setItem(SNAPSHOT_KEY, currentSnapshot);
+      localStorage.setItem(SNAPSHOT_DATE_KEY, new Date().toLocaleString('ar-SA'));
 
-      // Step B: Import new data
+      // Step B: Import new data into isolated tenant workspace
       const success = importDatabaseJson(pendingFileContent);
       if (success) {
         setShowConfirmRestoreModal(false);
         setPendingFileContent(null);
-        showToast('تم حفظ نسخة أمان من بياناتك السابقة واستعادة النسخة بنجاح! جاري التحديث...', 'success');
-        setTimeout(() => window.location.reload(), 1500);
+        showToast('تم حفظ نسخة الأمان واستعادة بيانات حسابك ومزامنتها سحابياً بنجاح ✓', 'success');
       } else {
         showToast('تعذر استيراد البيانات: فشل في بنية الجداول.', 'error');
       }
@@ -148,7 +154,7 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
 
   // 4. Revert to Safety Snapshot
   const handleRevertSafetySnapshot = () => {
-    const snapshot = localStorage.getItem('alghafari_safety_snapshot_before_restore');
+    const snapshot = localStorage.getItem(SNAPSHOT_KEY);
     if (!snapshot) {
       showToast('لا توجد نسخة أمان محفوظة للتراجع عنها!', 'error');
       return;
@@ -156,8 +162,7 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
 
     const success = importDatabaseJson(snapshot);
     if (success) {
-      showToast('تمت استعادة نسخة الأمان السابقة بنجاح! جاري التحديث...', 'success');
-      setTimeout(() => window.location.reload(), 1500);
+      showToast('تمت استعادة نسخة الأمان الخاصة بحسابك ومزامنتها سحابياً بنجاح ✓', 'success');
     }
   };
 
@@ -267,7 +272,7 @@ export const BackupRestoreTab: React.FC<BackupRestoreTabProps> = ({
             <div>
               <h5 className="font-bold text-white text-xs">تتوفر نسخة أمان تلقائية محفوظة في النظام</h5>
               <p className="text-[11px] text-blue-300">
-                تم حفظها تلقائياً قبل آخر عملية استعادة (تاريخ: {localStorage.getItem('alghafari_safety_snapshot_date') || 'سابقاً'})
+                تم حفظها تلقائياً قبل آخر عملية استعادة (تاريخ: {localStorage.getItem(SNAPSHOT_DATE_KEY) || 'سابقاً'})
               </p>
             </div>
           </div>

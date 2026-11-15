@@ -15,10 +15,18 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+  }
+
   body {
     font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #020824;
     color: #f5f8ff;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   
   /* Number styling for financial data */
@@ -62,16 +70,25 @@
   background: radial-gradient(circle at top right, rgba(7, 91, 255, 0.15), transparent 60%), #030a2a;
 }
 
-/* Cosmic Ambient Lighting for page */
+/* Cosmic Ambient Lighting for page - GPU-Accelerated Fixed Layer for 60/120fps scrolling */
 .cosmic-mesh-bg {
+  position: relative;
   background-color: #020824;
+}
+
+.cosmic-mesh-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background-image: 
     radial-gradient(at 0% 0%, rgba(0, 200, 255, 0.14) 0px, transparent 45%),
     radial-gradient(at 100% 0%, rgba(121, 0, 255, 0.16) 0px, transparent 45%),
     radial-gradient(at 50% 40%, rgba(7, 91, 255, 0.08) 0px, transparent 50%),
     radial-gradient(at 0% 100%, rgba(121, 0, 255, 0.14) 0px, transparent 45%),
     radial-gradient(at 100% 100%, rgba(0, 217, 154, 0.12) 0px, transparent 45%);
-  background-attachment: fixed;
+  transform: translateZ(0);
 }
 
 /* Subtle cyber dot pattern */
@@ -96,6 +113,11 @@
   background: #00c8ff;
 }
 
+/* Off-screen print portal hidden on screen */
+#alghafari-active-print-sheet {
+  display: none;
+}
+
 /* Print Stylesheet for Invoices, Vouchers, Quotations and Reports PDF Export */
 @media print {
   @page {
@@ -112,8 +134,36 @@
     overflow: visible !important;
   }
 
+  /* Isolated Print Portal mode triggered from DocumentActionsBar */
+  body[data-printing-active="true"] > *:not(#alghafari-active-print-sheet) {
+    display: none !important;
+  }
+
+  body[data-printing-active="true"] > #alghafari-active-print-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
   header, footer, nav, aside, .no-print {
     display: none !important;
+  }
+
+  /* Preserve UnifiedDocumentLayout header and footer inside printable containers */
+  .unified-onyx-document header,
+  .unified-onyx-document footer,
+  #alghafari-active-print-sheet header,
+  #alghafari-active-print-sheet footer {
+    display: flex !important;
+  }
+
+  .unified-onyx-document header {
+    display: block !important;
   }
 
   /* When printing from inside a modal preview, hide background content */
@@ -162,14 +212,20 @@
   }
 
   /* Ensure text colors, borders, and tables print in crisp black/grayscale */
-  .printable-card * {
+  .printable-card *,
+  #alghafari-active-print-sheet * {
     color-adjust: exact !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
+  .print-keep-dark {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+  }
+
   /* Invert dark text/backgrounds in reports to high-contrast printable document colors */
-  .printable-card .text-white,
+  .printable-card .text-white:not(.print-keep-dark),
   .printable-card .text-slate-100,
   .printable-card .text-slate-200,
   .printable-card .text-slate-300,
@@ -177,7 +233,7 @@
     color: #0f172a !important;
   }
 
-  .printable-card .bg-slate-900,
+  .printable-card .bg-slate-900:not(.print-keep-dark),
   .printable-card .bg-slate-950,
   .printable-card .bg-slate-850,
   .printable-card .bg-slate-800 {
@@ -192,9 +248,13 @@
     border-color: #cbd5e1 !important;
   }
 
-  /* Prevent page breaks inside table rows */
-  table, tr, td, th {
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr, td, th {
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 
@@ -219,3 +279,82 @@
 .animate-tv-ticker:hover {
   animation-play-state: paused;
 }
+
+/* Premium Neon Dark Menu Buttons (مطابق لصور الواجهة المرفقة تماماً - فائق السرعة) */
+.onyx-neon-btn {
+  position: relative;
+  background: linear-gradient(180deg, #092c85 0%, #061e63 45%, #021245 100%);
+  border: 2px solid #00c8ff;
+  border-radius: 9999px;
+  box-shadow: 0 0 16px rgba(0, 200, 255, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 -2px 4px rgba(0, 0, 0, 0.5);
+  transition: transform 0.08s ease-out, filter 0.08s ease-out, border-color 0.08s ease-out, box-shadow 0.08s ease-out;
+  will-change: transform;
+}
+
+.onyx-neon-btn:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+  border-color: #5ce1e6;
+  box-shadow: 0 0 24px rgba(0, 200, 255, 0.65), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+}
+
+.onyx-neon-btn:active {
+  transform: scale(0.97);
+  filter: brightness(0.92);
+  transition: transform 0.04s ease-out;
+}
+
+/* Glassy top dome highlight reflection */
+.onyx-neon-btn::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 14px;
+  right: 14px;
+  height: 42%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border-radius: 9999px 9999px 40px 40px;
+  pointer-events: none;
+}
+
+/* Left Circular Chevron Button */
+.onyx-chevron-circle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, #00e5ff 0%, #0088ff 70%, #0044cc 100%);
+  border: 1.5px solid #a5f3fc;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.8), inset 0 1px 1px #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.onyx-neon-btn:hover .onyx-chevron-circle {
+  transform: scale(1.08);
+}
+
+/* Framed Box for "مميزات متقدمة وإدارة احترافية" */
+.onyx-advanced-frame {
+  position: relative;
+  border-radius: 2rem;
+  border: 2px solid #075bff;
+  background: linear-gradient(180deg, #030b2c 0%, #020824 100%);
+  box-shadow: 0 0 30px rgba(7, 91, 255, 0.35), inset 0 0 20px rgba(7, 91, 255, 0.15);
+}
+
+/* GPU-accelerated ultra-smooth 60/120fps scrolling for the unified main menu */
+#main-menu-unified-root {
+  contain: layout style;
+  transform: translateZ(0);
+  -webkit-overflow-scrolling: touch;
+}
+
+#main-menu-unified-root .grid {
+  contain: layout paint;
+}
+
+

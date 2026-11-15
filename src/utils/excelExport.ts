@@ -1,10 +1,10 @@
-import * as XLSX from 'xlsx';
 import { Account, Contact, Invoice, Product } from '../types/accounting';
 
 /**
- * Exports data to a genuine Microsoft Excel (.xlsx) file
+ * Exports data to a genuine Microsoft Excel (.xlsx) file (dynamically loaded on demand)
  */
-export function exportToExcel(data: any[], filename: string, sheetName: string = 'البيانات') {
+export async function exportToExcel(data: any[], filename: string, sheetName: string = 'البيانات') {
+  const XLSX = await import('xlsx');
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);

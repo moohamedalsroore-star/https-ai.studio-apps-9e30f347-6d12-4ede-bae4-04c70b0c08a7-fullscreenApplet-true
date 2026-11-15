@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   BarChart3,
   Scale,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 import {
   generateAccountLedger,
   generateBalanceSheet,
@@ -46,7 +47,16 @@ export const ReportsView: React.FC = () => {
     | 'DEBT_AGING'
     | 'FX_VALUATION'
     | 'VAT_RETURN'
-  >('INCOME_STATEMENT');
+  >(() => {
+    try {
+      const saved = sessionStorage.getItem('alghafari_reports_tab');
+      if (saved) {
+        sessionStorage.removeItem('alghafari_reports_tab');
+        return saved as any;
+      }
+    } catch {}
+    return 'INCOME_STATEMENT';
+  });
 
   const [selectedAccountId, setSelectedAccountId] = useState<string>('acc-1101');
   const [reportCurrency, setReportCurrency] = useState<string>(settings.baseCurrency);
@@ -73,96 +83,120 @@ export const ReportsView: React.FC = () => {
     return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
-  // Generate real-time reports
-  const trialBalance = generateTrialBalance(accounts, journalEntries);
-  const incomeStatement = generateIncomeStatement(accounts);
-  const balanceSheet = generateBalanceSheet(accounts, incomeStatement.netProfit);
-  const vatReport = generateVatReport(invoices);
-  const accountLedger = generateAccountLedger(selectedAccountId, accounts, journalEntries);
+  // Generate real-time reports with useMemo for instantaneous loading
+  const trialBalance = useMemo(() => generateTrialBalance(accounts, journalEntries), [accounts, journalEntries]);
+  const incomeStatement = useMemo(() => generateIncomeStatement(accounts), [accounts]);
+  const balanceSheet = useMemo(() => generateBalanceSheet(accounts, incomeStatement.netProfit), [accounts, incomeStatement.netProfit]);
+  const vatReport = useMemo(() => generateVatReport(invoices), [invoices]);
+  const accountLedger = useMemo(() => generateAccountLedger(selectedAccountId, accounts, journalEntries), [selectedAccountId, accounts, journalEntries]);
 
   // FX Gain / Loss Accounts
-  const fxGainAcc = accounts.find((a) => a.code === '4104');
-  const fxLossAcc = accounts.find((a) => a.code === '5207');
-  const netFxProfit = (fxGainAcc?.balance || 0) - (fxLossAcc?.balance || 0);
+  const fxGainAcc = useMemo(() => accounts.find((a) => a.code === '4104'), [accounts]);
+  const fxLossAcc = useMemo(() => accounts.find((a) => a.code === '5207'), [accounts]);
+  const netFxProfit = useMemo(() => (fxGainAcc?.balance || 0) - (fxLossAcc?.balance || 0), [fxGainAcc, fxLossAcc]);
 
   // Customers & Suppliers Debts Book (Smart Accountant)
-  const customersWithDebt = contacts
-    .filter((c) => c.type === 'CUSTOMER')
-    .sort((a, b) => (b.balance || 0) - (a.balance || 0));
+  const { customersWithDebt, suppliersWithDebt, totalCustomerDebt, totalSupplierDebt } = useMemo(() => {
+    const custs: typeof contacts = [];
+    const supps: typeof contacts = [];
+    let totCust = 0;
+    let totSupp = 0;
 
-  const suppliersWithDebt = contacts
-    .filter((c) => c.type === 'SUPPLIER')
-    .sort((a, b) => (b.balance || 0) - (a.balance || 0));
-
-  const totalCustomerDebt = customersWithDebt.reduce((sum, c) => sum + (c.balance || 0), 0);
-  const totalSupplierDebt = suppliersWithDebt.reduce((sum, c) => sum + (c.balance || 0), 0);
-
-  // Onyx Pro: Product Velocity & Dormancy Analysis Data
-  const productVelocityData = products.map((prod) => {
-    const salesMovements = stockMovements.filter((sm) => sm.productId === prod.id && sm.type === 'SALE');
-    const totalSoldQty = salesMovements.reduce((sum, sm) => sum + Math.abs(sm.quantityChange), 0);
-    const lastSale = salesMovements.length > 0 ? salesMovements[0].date : undefined;
-    const totalSalesValue = totalSoldQty * prod.salePrice;
-    let velocityCategory: 'FAST' | 'MEDIUM' | 'SLOW' | 'DORMANT' = 'DORMANT';
-    if (totalSoldQty >= 20) velocityCategory = 'FAST';
-    else if (totalSoldQty >= 5) velocityCategory = 'MEDIUM';
-    else if (totalSoldQty > 0) velocityCategory = 'SLOW';
-
-    return {
-      id: prod.id,
-      code: prod.code,
-      name: prod.nameAr,
-      category: prod.category,
-      unit: prod.unit,
-      stockQty: prod.stockQty,
-      soldQty: totalSoldQty,
-      salePrice: prod.salePrice,
-      totalSalesValue,
-      lastSaleDate: lastSale,
-      velocityCategory,
-    };
-  });
-
-  // Onyx Pro: Comprehensive Debt Aging Data
-  const nowTime = Date.now();
-  const debtAgingData = contacts.map((c) => {
-    const contactInvoices = invoices.filter(
-      (inv) => (inv.partyId === c.id || inv.partyName === c.name) && inv.status !== 'PAID'
-    );
-    let c0to30 = 0;
-    let c31to60 = 0;
-    let c61to90 = 0;
-    let cOver90 = 0;
-
-    contactInvoices.forEach((inv) => {
-      const remaining = (inv.grandTotal || 0) - (inv.paidAmount || 0);
-      if (remaining > 0) {
-        const days = Math.floor((nowTime - new Date(inv.date).getTime()) / (1000 * 60 * 60 * 24));
-        if (days <= 30) c0to30 += remaining;
-        else if (days <= 60) c31to60 += remaining;
-        else if (days <= 90) c61to90 += remaining;
-        else cOver90 += remaining;
+    for (let i = 0; i < contacts.length; i++) {
+      const c = contacts[i];
+      if (c.type === 'CUSTOMER') {
+        custs.push(c);
+        totCust += c.balance || 0;
+      } else if (c.type === 'SUPPLIER') {
+        supps.push(c);
+        totSupp += c.balance || 0;
       }
-    });
-
-    // If contact has non-invoice ledger balance but no unpaid invoices:
-    if (c.balance > 0 && c0to30 + c31to60 + c61to90 + cOver90 === 0) {
-      c0to30 = c.balance;
     }
 
+    custs.sort((a, b) => (b.balance || 0) - (a.balance || 0));
+    supps.sort((a, b) => (b.balance || 0) - (a.balance || 0));
+
     return {
-      id: c.id,
-      code: c.code,
-      name: c.name,
-      type: c.type,
-      phone: c.phone,
-      totalBalance: c.balance,
-      current0to30: c0to30,
-      days31to60: c31to60,
-      days61to90: c61to90,
-      daysOver90: cOver90,
+      customersWithDebt: custs,
+      suppliersWithDebt: supps,
+      totalCustomerDebt: totCust,
+      totalSupplierDebt: totSupp,
     };
-  });
+  }, [contacts]);
+
+  // Onyx Pro: Product Velocity & Dormancy Analysis Data
+  const productVelocityData = useMemo(() => {
+    return products.map((prod) => {
+      const salesMovements = stockMovements.filter((sm) => sm.productId === prod.id && sm.type === 'SALE');
+      let totalSoldQty = 0;
+      for (let k = 0; k < salesMovements.length; k++) {
+        totalSoldQty += Math.abs(salesMovements[k].quantityChange);
+      }
+      const lastSale = salesMovements.length > 0 ? salesMovements[0].date : undefined;
+      const totalSalesValue = totalSoldQty * prod.salePrice;
+      let velocityCategory: 'FAST' | 'MEDIUM' | 'SLOW' | 'DORMANT' = 'DORMANT';
+      if (totalSoldQty >= 20) velocityCategory = 'FAST';
+      else if (totalSoldQty >= 5) velocityCategory = 'MEDIUM';
+      else if (totalSoldQty > 0) velocityCategory = 'SLOW';
+
+      return {
+        id: prod.id,
+        code: prod.code,
+        name: prod.nameAr,
+        category: prod.category,
+        unit: prod.unit,
+        stockQty: prod.stockQty,
+        soldQty: totalSoldQty,
+        salePrice: prod.salePrice,
+        totalSalesValue,
+        lastSaleDate: lastSale,
+        velocityCategory,
+      };
+    });
+  }, [products, stockMovements]);
+
+  // Onyx Pro: Comprehensive Debt Aging Data
+  const debtAgingData = useMemo(() => {
+    const nowTime = Date.now();
+    return contacts.map((c) => {
+      const contactInvoices = invoices.filter(
+        (inv) => (inv.partyId === c.id || inv.partyName === c.name) && inv.status !== 'PAID'
+      );
+      let c0to30 = 0;
+      let c31to60 = 0;
+      let c61to90 = 0;
+      let cOver90 = 0;
+
+      for (let idx = 0; idx < contactInvoices.length; idx++) {
+        const inv = contactInvoices[idx];
+        const remaining = (inv.grandTotal || 0) - (inv.paidAmount || 0);
+        if (remaining > 0) {
+          const days = Math.floor((nowTime - new Date(inv.date).getTime()) / (1000 * 60 * 60 * 24));
+          if (days <= 30) c0to30 += remaining;
+          else if (days <= 60) c31to60 += remaining;
+          else if (days <= 90) c61to90 += remaining;
+          else cOver90 += remaining;
+        }
+      }
+
+      if (c.balance > 0 && c0to30 + c31to60 + c61to90 + cOver90 === 0) {
+        c0to30 = c.balance;
+      }
+
+      return {
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        type: c.type,
+        phone: c.phone,
+        totalBalance: c.balance,
+        current0to30: c0to30,
+        days31to60: c31to60,
+        days61to90: c61to90,
+        daysOver90: cOver90,
+      };
+    });
+  }, [contacts, invoices]);
 
   const reportTabs = [
     { id: 'INCOME_STATEMENT', label: 'قائمة الدخل والأرباح', icon: TrendingUp },
@@ -334,7 +368,22 @@ export const ReportsView: React.FC = () => {
         })}
       </div>
 
-      <div id="financial-report-content" className="space-y-6">
+      <div id="financial-report-content" className="space-y-6 printable-card">
+        {/* Onyx Pro Unified Report Header for Preview, PDF & Printing */}
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle={currentReportMeta.title}
+            documentSubtitle="تقرير مالي وإداري معتمد - الغفاري سوفت برو"
+            documentNumber={`REP-${new Date().getFullYear()}-${activeReport.substring(0, 4)}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            currency={reportCurrency}
+            customMeta={[
+              { label: 'السنة المالية', value: settings.fiscalYear },
+              { label: 'عملة العرض', value: reportCurrency },
+              { label: 'نوع التقرير', value: currentReportMeta.title },
+            ]}
+          />
+        </div>
         {/* REPORT 1: INCOME STATEMENT (قائمة الدخل) */}
         {activeReport === 'INCOME_STATEMENT' && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 printable-card">
@@ -1128,6 +1177,13 @@ export const ReportsView: React.FC = () => {
           </div>
         </div>
       )}
+        {/* Onyx Pro Unified Report Footer with Printed By User and Signatures */}
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`REP-${new Date().getFullYear()}-${activeReport.substring(0, 4)}`}
+            signatureLabels={['المحاسب المالي', 'المراجع المالي الداخلي', 'اعتماد المدير العام / الختم']}
+          />
+        </div>
       </div>
     </div>
   );

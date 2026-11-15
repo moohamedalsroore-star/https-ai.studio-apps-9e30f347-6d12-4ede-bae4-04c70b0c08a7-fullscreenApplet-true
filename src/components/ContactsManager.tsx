@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users,
   UserCheck,
@@ -25,6 +25,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { Contact, PaymentMethod } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 import { FreeNumberInput } from './FreeNumberInput';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { exportDebtAgingToExcel } from '../utils/excelExport';
@@ -92,38 +93,58 @@ export const ContactsManager: React.FC = () => {
   const [voucherAccount, setVoucherAccount] = useState<string>('acc-1101');
   const [voucherNotes, setVoucherNotes] = useState('');
 
-  // Filtered contacts
-  const currentContacts = contacts.filter((c) => c.type === activeTab);
+  // Filtered contacts with useMemo for instant search
+  const currentContacts = useMemo(
+    () => contacts.filter((c) => c.type === activeTab),
+    [contacts, activeTab]
+  );
 
-  const filteredContacts = currentContacts.filter((c) => {
-    const matchesSearch =
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.phone.includes(searchQuery) ||
-      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (c.taxNumber && c.taxNumber.includes(searchQuery));
+  const filteredContacts = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return currentContacts.filter((c) => {
+      const matchesSearch =
+        !q ||
+        c.name.toLowerCase().includes(q) ||
+        c.phone.includes(q) ||
+        c.code.toLowerCase().includes(q) ||
+        (c.taxNumber && c.taxNumber.includes(q));
 
-    let matchesBalance = true;
-    if (filterBalance === 'HAS_BALANCE') matchesBalance = c.balance > 0;
-    else if (filterBalance === 'ZERO') matchesBalance = c.balance === 0;
-    else if (filterBalance === 'OVER_LIMIT') {
-      matchesBalance = Boolean(c.creditLimit && c.creditLimit > 0 && c.balance > c.creditLimit);
+      if (!matchesSearch) return false;
+
+      if (filterBalance === 'HAS_BALANCE') return c.balance > 0;
+      if (filterBalance === 'ZERO') return c.balance === 0;
+      if (filterBalance === 'OVER_LIMIT') {
+        return Boolean(c.creditLimit && c.creditLimit > 0 && c.balance > c.creditLimit);
+      }
+
+      return true;
+    });
+  }, [currentContacts, searchQuery, filterBalance]);
+
+  // Single-pass KPI Calculations
+  const { totalCustomerReceivables, totalSupplierPayables, overLimitCustomersCount } = useMemo(() => {
+    let custReceivables = 0;
+    let suppPayables = 0;
+    let overLimit = 0;
+
+    for (let i = 0; i < contacts.length; i++) {
+      const c = contacts[i];
+      if (c.type === 'CUSTOMER') {
+        custReceivables += c.balance;
+        if (c.creditLimit && c.creditLimit > 0 && c.balance > c.creditLimit) {
+          overLimit++;
+        }
+      } else if (c.type === 'SUPPLIER') {
+        suppPayables += c.balance;
+      }
     }
 
-    return matchesSearch && matchesBalance;
-  });
-
-  // KPI Calculations
-  const totalCustomerReceivables = contacts
-    .filter((c) => c.type === 'CUSTOMER')
-    .reduce((sum, c) => sum + c.balance, 0);
-
-  const totalSupplierPayables = contacts
-    .filter((c) => c.type === 'SUPPLIER')
-    .reduce((sum, c) => sum + c.balance, 0);
-
-  const overLimitCustomersCount = contacts.filter(
-    (c) => c.type === 'CUSTOMER' && c.creditLimit && c.creditLimit > 0 && c.balance > c.creditLimit
-  ).length;
+    return {
+      totalCustomerReceivables: custReceivables,
+      totalSupplierPayables: suppPayables,
+      overLimitCustomersCount: overLimit,
+    };
+  }, [contacts]);
 
   const getWhatsAppUrl = (c: Contact) => {
     const cleanDigits = (c.phone || '').replace(/[^0-9]/g, '');
@@ -257,7 +278,13 @@ export const ContactsManager: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <DocumentActionsBar
+            targetElementId="contacts-directory-content"
+            filename={`دليل_${activeTab === 'CUSTOMER' ? 'العملاء' : 'الموردين'}_${settings.companyName}`}
+            documentTitle={activeTab === 'CUSTOMER' ? 'دليل العملاء والأرصدة القائمة' : 'دليل الموردين والمستحقات القائمة'}
+            hasData={filteredContacts.length > 0}
+          />
           <button
             onClick={handleOpenAdd}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 cursor-pointer transition-all"
@@ -388,7 +415,26 @@ export const ContactsManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Contacts Table */}
+      {/* Contacts Directory Table */}
+      <div id="contacts-directory-content" className="space-y-4 printable-card">
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle={activeTab === 'CUSTOMER' ? 'دليل العملاء والأرصدة القائمة' : 'دليل الموردين والمستحقات القائمة'}
+            documentSubtitle={activeTab === 'CUSTOMER' ? 'Customers Directory & Balances' : 'Suppliers Directory & Balances'}
+            documentNumber={`DIR-${activeTab === 'CUSTOMER' ? 'CUST' : 'SUPP'}-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge={activeTab === 'CUSTOMER' ? 'قائمة العملاء' : 'قائمة الموردين'}
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'عدد الحسابات', value: `${filteredContacts.length} حساب` },
+              {
+                label: 'إجمالي الرصيد',
+                value: `${(activeTab === 'CUSTOMER' ? totalCustomerReceivables : totalSupplierPayables).toFixed(2)} ${settings.baseCurrency}`,
+              },
+            ]}
+          />
+        </div>
+
       <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
         <table className="w-full text-right text-sm">
           <thead className="bg-slate-800/90 text-slate-300 font-bold text-xs uppercase tracking-wider border-b border-slate-700">
@@ -399,7 +445,7 @@ export const ContactsManager: React.FC = () => {
               <th className="py-3 px-4 text-center">الحد الائتماني</th>
               <th className="py-3 px-4 text-center">الرصيد القائم</th>
               <th className="py-3 px-4 text-center">حالة الحساب</th>
-              <th className="py-3 px-4 text-center">الإجراءات المحاسبية</th>
+              <th className="py-3 px-4 text-center no-print">الإجراءات المحاسبية</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80">
@@ -469,7 +515,7 @@ export const ContactsManager: React.FC = () => {
                       </span>
                     )}
                   </td>
-                  <td className="py-3.5 px-4 text-center">
+                  <td className="py-3.5 px-4 text-center no-print">
                     <div className="flex items-center justify-center gap-1.5">
                       {/* View Ledger & History */}
                       <button
@@ -539,6 +585,14 @@ export const ContactsManager: React.FC = () => {
         </table>
       </div>
 
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`DIR-${activeTab === 'CUSTOMER' ? 'CUST' : 'SUPP'}-${new Date().getFullYear()}`}
+            signatureLabels={['المختص / المبيعات', 'المحاسب المالي', 'اعتماد المدير العام / الختم']}
+          />
+        </div>
+      </div>
+
       {/* DRAWER / MODAL: Contact Transaction History & Ledger */}
       {selectedContactHistory && (() => {
         const { contactInvoices, contactVouchers } = getContactHistory(selectedContactHistory);
@@ -565,8 +619,8 @@ export const ContactsManager: React.FC = () => {
         });
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col printable-card print:border-none print:shadow-none print:max-h-none print:overflow-visible">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[92dvh] my-auto flex flex-col printable-card print:border-none print:shadow-none print:max-h-none print:overflow-visible">
               {/* Header */}
               <div className="p-4 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between no-print">
                 <div>
@@ -648,17 +702,28 @@ export const ContactsManager: React.FC = () => {
                 </div>
               </div>
 
-              <div id="contact-statement-content" className="space-y-4">
-                {/* Print-Only Official Document Header */}
-              <div className="p-6 text-center border-b-2 border-slate-900 pb-3 hidden print:block text-black">
-                <h2 className="text-xl font-black">{settings.companyName}</h2>
-                <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
-                <div className="font-bold text-base mt-2">كشف حساب مالي تفصيلي (Account Statement)</div>
-                <div className="mt-2 text-xs grid grid-cols-2 text-right bg-slate-100 p-3 rounded">
-                  <div><span className="font-bold">اسم الحساب / العميل:</span> {selectedContactHistory.name} ({selectedContactHistory.code})</div>
-                  <div><span className="font-bold">الهاتف:</span> {selectedContactHistory.phone} | <span className="font-bold">التاريخ:</span> {new Date().toISOString().split('T')[0]}</div>
+              <div id="contact-statement-content" className="space-y-4 printable-card">
+                {/* Print-Only Official Document Header with Onyx Pro Template */}
+                <div className="hidden print:block mb-4">
+                  <UnifiedDocumentHeader
+                    documentTitle="كشف حساب مالي تفصيلي وأعمار ديون"
+                    documentSubtitle="Account Ledger & Debt Aging Statement"
+                    documentNumber={selectedContactHistory.code}
+                    documentDate={new Date().toISOString().split('T')[0]}
+                    documentTypeBadge={selectedContactHistory.type === 'CUSTOMER' ? 'كشف حساب عميل' : 'كشف حساب مورد'}
+                    partyLabel={selectedContactHistory.type === 'CUSTOMER' ? 'العميل' : 'المورد'}
+                    partyName={selectedContactHistory.name}
+                    partyTaxNumber={selectedContactHistory.taxNumber}
+                    partyPhone={selectedContactHistory.phone}
+                    partyAddress={selectedContactHistory.address}
+                    currency={settings.baseCurrency}
+                    customMeta={[
+                      { label: 'الرصيد القائم', value: <span className="font-bold font-mono">{selectedContactHistory.balance.toFixed(2)} {settings.baseCurrency}</span> },
+                      { label: 'عدد الفواتير', value: `${contactInvoices.length} فاتورة` },
+                      { label: 'عدد السندات', value: `${contactVouchers.length} سند` }
+                    ]}
+                  />
                 </div>
-              </div>
 
               {/* Balance Summary Header Bar */}
               <div className="p-4 bg-slate-950/60 border-b border-slate-800 grid grid-cols-3 gap-4 text-center">
@@ -798,39 +863,55 @@ export const ContactsManager: React.FC = () => {
                   )}
                 </div>
 
-                {/* 2. Vouchers History */}
+                {/* 2. Vouchers History Tabular Ledger */}
                 <div>
-                  <h4 className="font-bold text-white text-sm mb-3">سجل سندات القبض والصرف المسجلة</h4>
+                  <h4 className="font-bold text-white text-sm mb-3">سجل سندات القبض والصرف المسجلة ({contactVouchers.length})</h4>
                   {contactVouchers.length === 0 ? (
                     <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 text-center text-xs text-slate-400">
                       لا توجد سندات قبض أو صرف منفصلة
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {contactVouchers.map((v) => (
-                        <div
-                          key={v.id}
-                          className="p-3 rounded-xl bg-slate-800/40 border border-slate-800 flex items-center justify-between text-xs"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${v.type === 'RECEIPT' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                              {v.type === 'RECEIPT' ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-                            </div>
-                            <div>
-                              <div className="font-mono-num font-bold text-white">{v.voucherNumber} - {v.date}</div>
-                              <div className="text-slate-400">{v.description}</div>
-                            </div>
-                          </div>
-                          <div className="text-left font-mono-num">
-                            <div className="font-bold text-emerald-400 text-sm">
-                              {v.amount.toFixed(2)} {settings.baseCurrency}
-                            </div>
-                            <div className="text-[10px] text-slate-500">{v.accountName}</div>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-800 text-slate-300">
+                          <tr>
+                            <th className="py-2.5 px-3">رقم السند</th>
+                            <th className="py-2.5 px-3">التاريخ</th>
+                            <th className="py-2.5 px-3 text-center">النوع</th>
+                            <th className="py-2.5 px-3">الحساب المالي</th>
+                            <th className="py-2.5 px-3">البيان والشرح</th>
+                            <th className="py-2.5 px-3 text-center">المبلغ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {contactVouchers.map((v) => (
+                            <tr key={v.id} className="hover:bg-slate-800/30">
+                              <td className="py-2.5 px-3 font-mono-num font-bold text-emerald-400">{v.voucherNumber}</td>
+                              <td className="py-2.5 px-3 font-mono-num text-slate-400">{v.date}</td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${v.type === 'RECEIPT' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                  {v.type === 'RECEIPT' ? 'سند قبض' : 'سند صرف'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-300">{v.accountName}</td>
+                              <td className="py-2.5 px-3 text-slate-300">{v.description}</td>
+                              <td className="py-2.5 px-3 text-center font-mono-num font-bold text-emerald-400">
+                                {v.amount.toFixed(2)} {v.currency || settings.baseCurrency}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
+                </div>
+
+                {/* Official Statement Footer with Signature Blocks and Printed By User */}
+                <div className="hidden print:block mt-6">
+                  <UnifiedDocumentFooter
+                    documentNumber={selectedContactHistory.code}
+                    signatureLabels={['توقيع العميل / المورد', 'المحاسب المالي', 'اعتماد الإدارة / الختم']}
+                  />
                 </div>
               </div>
             </div>
@@ -841,8 +922,8 @@ export const ContactsManager: React.FC = () => {
 
       {/* MODAL 1: Add / Edit Contact */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90dvh] my-auto overscroll-contain overflow-hidden">
             <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Users className="w-5 h-5 text-emerald-400" />
@@ -869,7 +950,7 @@ export const ContactsManager: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSaveContact} className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
+            <form onSubmit={handleSaveContact} className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 pb-6 sm:pb-6 touch-pan-y">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">الكود</label>
@@ -989,8 +1070,8 @@ export const ContactsManager: React.FC = () => {
 
       {/* MODAL 2: Quick Receipt / Payment Voucher */}
       {quickVoucherContact && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90dvh] my-auto">
             <div className={`p-4 border-b flex items-center justify-between ${
               quickVoucherContact.type === 'CUSTOMER'
                 ? 'bg-emerald-950/40 border-emerald-500/30'

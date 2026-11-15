@@ -1,5 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { Trash2, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import {
+  doc,
+  onSnapshot,
+  Unsubscribe,
+} from 'firebase/firestore';
 import {
   Account,
   AuditLogEntry,
@@ -44,6 +49,29 @@ import {
   generateVoucherJournal,
   recalculateAllAccountBalances,
 } from '../utils/accountingEngine';
+import { useAuth } from './AuthContext';
+import { db, logFirestoreError, OperationType } from '../lib/firebase';
+import {
+  provisionOrLoadWorkspace,
+  syncWorkspaceRootToFirestore,
+  syncCollectionDiffToFirestore,
+  syncAuditSnapshotToFirestore,
+  subscribeSubcollection,
+  formatAccountDoc,
+  formatProductDoc,
+  formatContactDoc,
+  formatInvoiceDoc,
+  formatQuotationDoc,
+  formatReturnInvoiceDoc,
+  formatVoucherDoc,
+  formatJournalEntryDoc,
+  formatStockMovementDoc,
+  formatStockAdjustmentDoc,
+  formatStockTransferDoc,
+  formatStockReceiptNoteDoc,
+  formatReconciliationDoc,
+  formatAuditLogDoc,
+} from '../lib/firestoreSync';
 
 export interface ToastNotification {
   id: string;
@@ -321,10 +349,76 @@ interface AccountingContextType {
 
 const AccountingContext = createContext<AccountingContextType | undefined>(undefined);
 
-// Clean storage key ensuring zero sample products or demo clutter
-const STORAGE_KEY = 'smart_accountant_pro_v3_clean';
+const DEFAULT_STAFF_USERS: SystemUser[] = [
+  {
+    id: 'usr-admin',
+    name: 'مدير الحساب',
+    username: 'owner',
+    role: 'ADMIN',
+    phone: '',
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
+];
+
+function getTenantStoragePrefix(uid: string | null | undefined): string {
+  return uid ? `alghafari_tenant_${uid}` : 'alghafari_guest_ephemeral';
+}
+
+function readTenantJson<T>(prefix: string, suffix: string, fallback: T): T {
+  if (prefix === 'alghafari_guest_ephemeral') return fallback;
+  try {
+    const raw = localStorage.getItem(`${prefix}_${suffix}`);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function filterCleanBranches(list: Branch[]): Branch[] {
+  return (list || []).filter(
+    (b) =>
+      b.nameAr !== 'الفرع الرئيسي (الإدارة العامة)' &&
+      b.id !== 'br-main' &&
+      !b.nameAr.includes('الفرع الرئيسي')
+  );
+}
+
+function filterCleanAccounts(list: Account[]): Account[] {
+  return (list || []).filter(
+    (a) =>
+      !a.nameAr.includes('الراجحي') &&
+      !a.nameAr.includes('الأهلي') &&
+      !a.nameAr.includes('الاهلي') &&
+      a.code !== '1103' &&
+      a.code !== '1104'
+  );
+}
+
+function mergeSettingsWithDefaults(parsed?: Partial<SystemSettings>): SystemSettings {
+  if (!parsed) return INITIAL_SETTINGS;
+  const normalized = { ...parsed };
+  if (normalized.companyName === 'مؤسسة التجارة والخدمات العامة' || !normalized.companyName) {
+    normalized.companyName = 'الغفاري سوفت برو';
+    normalized.companyNameEn = 'Al-Ghafari Soft Pro';
+  }
+  return {
+    ...INITIAL_SETTINGS,
+    ...normalized,
+    printSettings: { ...INITIAL_SETTINGS.printSettings!, ...(normalized.printSettings || {}) } as SystemSettings['printSettings'],
+    documentTemplates: { ...INITIAL_SETTINGS.documentTemplates!, ...(normalized.documentTemplates || {}) } as SystemSettings['documentTemplates'],
+    accountingConfig: { ...INITIAL_SETTINGS.accountingConfig!, ...(normalized.accountingConfig || {}) } as SystemSettings['accountingConfig'],
+    inventoryConfig: { ...INITIAL_SETTINGS.inventoryConfig!, ...(normalized.inventoryConfig || {}) } as SystemSettings['inventoryConfig'],
+    reportConfig: { ...INITIAL_SETTINGS.reportConfig!, ...(normalized.reportConfig || {}) } as SystemSettings['reportConfig'],
+    appearanceConfig: { ...INITIAL_SETTINGS.appearanceConfig!, ...(normalized.appearanceConfig || {}) } as SystemSettings['appearanceConfig'],
+  };
+}
 
 export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { authUser, userProfile, isAuthReady, tenantCode, updateProfileCompanyName } = useAuth();
+  const activeUid = authUser?.uid && userProfile?.status === 'ACTIVE' ? authUser.uid : null;
+  const tenantPrefix = getTenantStoragePrefix(activeUid);
+
   const [activeView, setActiveView] = useState<string>('dashboard');
   const [branchActionModal, setBranchActionModal] = useState<'BRANCH' | 'WAREHOUSE' | 'MENU' | null>(null);
 
@@ -348,242 +442,478 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setDeleteConfirm(null);
   };
 
-  const [settings, setSettings] = useState<SystemSettings>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_settings`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.companyName === 'مؤسسة التجارة والخدمات العامة' || !parsed.companyName) {
-          parsed.companyName = 'الغفاري سوفت برو';
-          parsed.companyNameEn = 'Al-Ghafari Soft Pro';
-        }
-        return {
-          ...INITIAL_SETTINGS,
-          ...parsed,
-          printSettings: { ...INITIAL_SETTINGS.printSettings, ...(parsed.printSettings || {}) },
-          documentTemplates: { ...INITIAL_SETTINGS.documentTemplates, ...(parsed.documentTemplates || {}) },
-          accountingConfig: { ...INITIAL_SETTINGS.accountingConfig, ...(parsed.accountingConfig || {}) },
-          inventoryConfig: { ...INITIAL_SETTINGS.inventoryConfig, ...(parsed.inventoryConfig || {}) },
-          reportConfig: { ...INITIAL_SETTINGS.reportConfig, ...(parsed.reportConfig || {}) },
-          appearanceConfig: { ...INITIAL_SETTINGS.appearanceConfig, ...(parsed.appearanceConfig || {}) },
-        };
-      } catch {
-        return INITIAL_SETTINGS;
-      }
-    }
-    return INITIAL_SETTINGS;
-  });
+  const [settings, setSettings] = useState<SystemSettings>(INITIAL_SETTINGS);
+  const [branches, setBranches] = useState<Branch[]>(() => filterCleanBranches(INITIAL_BRANCHES));
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(INITIAL_WAREHOUSES);
+  const [costCenters, setCostCenters] = useState<CostCenter[]>(INITIAL_COST_CENTERS);
+  const [accounts, setAccounts] = useState<Account[]>(() => filterCleanAccounts(INITIAL_ACCOUNTS));
+  const [products, setProducts] = useState<Product[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [returnInvoices, setReturnInvoices] = useState<ReturnInvoice[]>([]);
+  const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>([]);
+  const [stockReceiptNotes, setStockReceiptNotes] = useState<StockReceiptNote[]>([]);
+  const [vouchers, setVouchers] = useState<Voucher[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [stockAdjustments, setStockAdjustments] = useState<StockAdjustment[]>([]);
+  const [currencies, setCurrencies] = useState<CurrencyConfig[]>(INITIAL_CURRENCIES);
+  const [users, setUsers] = useState<SystemUser[]>(DEFAULT_STAFF_USERS);
+  const [currentUser, setCurrentUser] = useState<SystemUser>(DEFAULT_STAFF_USERS[0]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [reconciliations, setReconciliations] = useState<BankReconciliationRecord[]>([]);
 
-  const [branches, setBranches] = useState<Branch[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_branches`);
-    let list: Branch[] = saved ? JSON.parse(saved) : INITIAL_BRANCHES;
-    // Permanently remove "الفرع الرئيسي (الإدارة العامة)" per user request
-    list = list.filter(
-      (b) =>
-        b.nameAr !== 'الفرع الرئيسي (الإدارة العامة)' &&
-        b.id !== 'br-main' &&
-        !b.nameAr.includes('الفرع الرئيسي')
-    );
-    try {
-      localStorage.setItem(`${STORAGE_KEY}_branches`, JSON.stringify(list));
-    } catch {
-      // ignore
-    }
-    return list;
-  });
+  // Refs controlling Firestore real-time diff syncing per authenticated user
+  const syncedUidRef = useRef<string | null>(null);
+  const cloudHydratedRef = useRef<boolean>(false);
+  const remoteApplyingRef = useRef<boolean>(false);
+  const prevSyncStateRef = useRef<Record<string, unknown>>({});
+  const prevSyncedArrayRefs = useRef<Record<string, unknown>>({});
+  const hydratedCollectionsRef = useRef<Set<string>>(new Set());
+  const syncedMapsRef = useRef<Record<string, Map<string, string>>>({});
+  const lastWorkspaceHashRef = useRef<string>('');
+  const lastSnapshotHashRef = useRef<string>('');
 
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(() => {
-    return branches[0]?.id || '';
-  });
-
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_warehouses`);
-    return saved ? JSON.parse(saved) : INITIAL_WAREHOUSES;
-  });
-
-  const [costCenters, setCostCenters] = useState<CostCenter[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_cost_centers`);
-    return saved ? JSON.parse(saved) : INITIAL_COST_CENTERS;
-  });
-
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_accounts`);
-    let list: Account[] = saved ? JSON.parse(saved) : INITIAL_ACCOUNTS;
-    // Permanently remove Rajhi and Ahli bank accounts per user request
-    list = list.filter(
-      (a) =>
-        !a.nameAr.includes('الراجحي') &&
-        !a.nameAr.includes('الأهلي') &&
-        !a.nameAr.includes('الاهلي') &&
-        a.code !== '1103' &&
-        a.code !== '1104'
-    );
-    try {
-      localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(list));
-    } catch {}
-    return list;
-  });
-
-  const [products, setProducts] = useState<Product[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_products`);
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
-  });
-
-  const [contacts, setContacts] = useState<Contact[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_contacts`);
-    return saved ? JSON.parse(saved) : INITIAL_CONTACTS;
-  });
-
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_invoices`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [quotations, setQuotations] = useState<Quotation[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_quotations`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [returnInvoices, setReturnInvoices] = useState<ReturnInvoice[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_returns`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_transfers`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [stockReceiptNotes, setStockReceiptNotes] = useState<StockReceiptNote[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_receipt_notes`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [vouchers, setVouchers] = useState<Voucher[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_vouchers`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_journal`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_stock_movements`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [stockAdjustments, setStockAdjustments] = useState<StockAdjustment[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_stock_adjustments`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [currencies, setCurrencies] = useState<CurrencyConfig[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_currencies`);
-    return saved ? JSON.parse(saved) : INITIAL_CURRENCIES;
-  });
-
-  // Onyx Pro Users & Role Management
-  const [users, setUsers] = useState<SystemUser[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        // fallback
-      }
-    }
-    return [
-      {
-        id: 'usr-admin',
-        name: 'مدير النظام (أدمن)',
-        username: 'admin',
-        role: 'ADMIN',
-        phone: '0555555555',
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'usr-accountant',
-        name: 'المحاسب المالي',
-        username: 'accountant',
-        role: 'ACCOUNTANT',
-        phone: '0555555556',
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'usr-cashier',
-        name: 'كاشير نقطة البيع',
-        username: 'cashier',
-        role: 'CASHIER',
-        phone: '0555555557',
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'usr-storekeeper',
-        name: 'أمين المستودع والمخازن',
-        username: 'storekeeper',
-        role: 'STOREKEEPER',
-        phone: '0555555558',
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-    ];
-  });
-
-  const [currentUser, setCurrentUser] = useState<SystemUser>(() => {
-    const savedId = localStorage.getItem(`${STORAGE_KEY}_current_user_id`);
-    const found = users.find((u) => u.id === savedId);
-    return found || users[0];
-  });
-
-  // Onyx Pro Audit Trail Log
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_audit_logs`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Bank & Cash Reconciliations
-  const [reconciliations, setReconciliations] = useState<BankReconciliationRecord[]>(() => {
-    const saved = localStorage.getItem(`${STORAGE_KEY}_reconciliations`);
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Debounced, Non-blocking LocalStorage Sync for Maximum Performance & Lightning Speed
+  // Reset all in-memory accounting state immediately on logout or account switch (Strict Zero-Leak Guarantee)
   useEffect(() => {
+    if (!activeUid) {
+      syncedUidRef.current = null;
+      cloudHydratedRef.current = false;
+      syncedMapsRef.current = {};
+      lastWorkspaceHashRef.current = '';
+      lastSnapshotHashRef.current = '';
+      prevSyncStateRef.current = {};
+      prevSyncedArrayRefs.current = {};
+      hydratedCollectionsRef.current = new Set();
+
+      setActiveView('dashboard');
+      setSettings(INITIAL_SETTINGS);
+      setBranches(filterCleanBranches(INITIAL_BRANCHES));
+      setSelectedBranchId('');
+      setWarehouses(INITIAL_WAREHOUSES);
+      setCostCenters(INITIAL_COST_CENTERS);
+      setAccounts(filterCleanAccounts(INITIAL_ACCOUNTS).map((a) => ({ ...a, balance: 0 })));
+      setProducts([]);
+      setContacts([]);
+      setInvoices([]);
+      setQuotations([]);
+      setReturnInvoices([]);
+      setStockTransfers([]);
+      setStockReceiptNotes([]);
+      setVouchers([]);
+      setJournalEntries([]);
+      setStockMovements([]);
+      setStockAdjustments([]);
+      setCurrencies(INITIAL_CURRENCIES);
+      setUsers(DEFAULT_STAFF_USERS);
+      setCurrentUser(DEFAULT_STAFF_USERS[0]);
+      setAuditLogs([]);
+      setReconciliations([]);
+      return;
+    }
+
+    // Hydrate from UID-scoped offline cache immediately while live Firestore listeners connect
+    const prefix = getTenantStoragePrefix(activeUid);
+    const ownerName = userProfile?.displayName || authUser?.displayName || authUser?.email?.split('@')[0] || 'مستخدم النظام';
+    const initialOwnerStaff: SystemUser = {
+      id: 'usr-admin',
+      name: ownerName,
+      username: authUser?.email?.split('@')[0] || 'owner',
+      role: 'ADMIN',
+      phone: '',
+      active: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    const cachedSettings = mergeSettingsWithDefaults(readTenantJson<Partial<SystemSettings>>(prefix, 'settings', INITIAL_SETTINGS));
+    const cachedBranches = filterCleanBranches(readTenantJson<Branch[]>(prefix, 'branches', INITIAL_BRANCHES));
+    const cachedWarehouses = readTenantJson<Warehouse[]>(prefix, 'warehouses', INITIAL_WAREHOUSES);
+    const cachedCostCenters = readTenantJson<CostCenter[]>(prefix, 'cost_centers', INITIAL_COST_CENTERS);
+    const cachedAccounts = filterCleanAccounts(readTenantJson<Account[]>(prefix, 'accounts', INITIAL_ACCOUNTS));
+    const cachedProducts = readTenantJson<Product[]>(prefix, 'products', []);
+    const cachedContacts = readTenantJson<Contact[]>(prefix, 'contacts', []);
+    const cachedInvoices = readTenantJson<Invoice[]>(prefix, 'invoices', []);
+    const cachedQuotations = readTenantJson<Quotation[]>(prefix, 'quotations', []);
+    const cachedReturns = readTenantJson<ReturnInvoice[]>(prefix, 'returns', []);
+    const cachedTransfers = readTenantJson<StockTransfer[]>(prefix, 'transfers', []);
+    const cachedReceipts = readTenantJson<StockReceiptNote[]>(prefix, 'receipt_notes', []);
+    const cachedVouchers = readTenantJson<Voucher[]>(prefix, 'vouchers', []);
+    const cachedJournal = readTenantJson<JournalEntry[]>(prefix, 'journal', []);
+    const cachedMovements = readTenantJson<StockMovement[]>(prefix, 'stock_movements', []);
+    const cachedAdjustments = readTenantJson<StockAdjustment[]>(prefix, 'stock_adjustments', []);
+    const cachedCurrencies = readTenantJson<CurrencyConfig[]>(prefix, 'currencies', INITIAL_CURRENCIES);
+    const cachedUsers = readTenantJson<SystemUser[]>(prefix, 'users', [initialOwnerStaff]);
+    const cachedAuditLogs = readTenantJson<AuditLogEntry[]>(prefix, 'audit_logs', []);
+    const cachedReconciliations = readTenantJson<BankReconciliationRecord[]>(prefix, 'reconciliations', []);
+
+    setSettings(cachedSettings);
+    setBranches(cachedBranches);
+    setSelectedBranchId(cachedBranches[0]?.id || '');
+    setWarehouses(cachedWarehouses);
+    setCostCenters(cachedCostCenters);
+    setAccounts(cachedAccounts);
+    setProducts(cachedProducts);
+    setContacts(cachedContacts);
+    setInvoices(cachedInvoices);
+    setQuotations(cachedQuotations);
+    setReturnInvoices(cachedReturns);
+    setStockTransfers(cachedTransfers);
+    setStockReceiptNotes(cachedReceipts);
+    setVouchers(cachedVouchers);
+    setJournalEntries(cachedJournal);
+    setStockMovements(cachedMovements);
+    setStockAdjustments(cachedAdjustments);
+    setCurrencies(cachedCurrencies);
+    const resolvedUsers = cachedUsers.length > 0 ? cachedUsers : [initialOwnerStaff];
+    setUsers(resolvedUsers);
+    setCurrentUser({ ...resolvedUsers[0], name: ownerName });
+    setAuditLogs(cachedAuditLogs);
+    setReconciliations(cachedReconciliations);
+
+    // Mount isolated Firestore workspace listeners for activeUid
+    if (!isAuthReady || !authUser?.emailVerified) return;
+
+    let cancelled = false;
+    const unsubs: Unsubscribe[] = [];
+    cloudHydratedRef.current = false;
+    syncedUidRef.current = activeUid;
+    syncedMapsRef.current = {};
+    hydratedCollectionsRef.current = new Set();
+
+    const startSync = async () => {
+      try {
+        const cleanInitialAccounts = filterCleanAccounts(INITIAL_ACCOUNTS);
+        const existingWs = await provisionOrLoadWorkspace({
+          uid: activeUid,
+          tenantCode: tenantCode || `AG-${activeUid.slice(0, 6).toUpperCase()}`,
+          companyName: cachedSettings.companyName || 'الغفاري سوفت برو',
+          settings: cachedSettings,
+          currencies: cachedCurrencies,
+          branches: cachedBranches,
+          warehouses: cachedWarehouses,
+          costCenters: cachedCostCenters,
+          staffUsers: resolvedUsers,
+          currentStaffUserId: initialOwnerStaff.id,
+          initialAccounts: cleanInitialAccounts,
+        });
+
+        if (cancelled) return;
+
+        if (existingWs) {
+          remoteApplyingRef.current = true;
+          const wsSettings = mergeSettingsWithDefaults(existingWs.settings);
+          const wsBranches = filterCleanBranches(existingWs.branches);
+          setSettings(wsSettings);
+          setCurrencies(existingWs.currencies.length ? existingWs.currencies : INITIAL_CURRENCIES);
+          setBranches(wsBranches);
+          setSelectedBranchId((prev) => prev || wsBranches[0]?.id || '');
+          setWarehouses(existingWs.warehouses.length ? existingWs.warehouses : INITIAL_WAREHOUSES);
+          setCostCenters(existingWs.costCenters.length ? existingWs.costCenters : INITIAL_COST_CENTERS);
+          const staff = existingWs.staffUsers?.length ? existingWs.staffUsers : [initialOwnerStaff];
+          setUsers(staff);
+          setCurrentUser({ ...(staff.find((u) => u.id === existingWs.currentStaffUserId) || staff[0]), name: ownerName });
+          lastWorkspaceHashRef.current = JSON.stringify({
+            companyName: wsSettings.companyName,
+            settings: wsSettings,
+            currencies: existingWs.currencies,
+            branches: wsBranches,
+            warehouses: existingWs.warehouses,
+            costCenters: existingWs.costCenters,
+            staffUsers: staff,
+            currentStaffUserId: existingWs.currentStaffUserId || staff[0]?.id,
+          });
+          setTimeout(() => {
+            remoteApplyingRef.current = false;
+          }, 50);
+        }
+
+        // Subscribe to Workspace Master Root doc
+        unsubs.push(
+          onSnapshot(
+            doc(db, 'workspaces', activeUid),
+            (snap) => {
+              if (!snap.exists() || cancelled) return;
+              const d = snap.data();
+              const nextSettings = mergeSettingsWithDefaults(d.settings);
+              const nextBranches = filterCleanBranches(d.branches || []);
+              const nextCurrencies = d.currencies || INITIAL_CURRENCIES;
+              const nextWarehouses = d.warehouses || INITIAL_WAREHOUSES;
+              const nextCostCenters = d.costCenters || INITIAL_COST_CENTERS;
+              const nextStaff: SystemUser[] = d.staffUsers?.length ? d.staffUsers : [initialOwnerStaff];
+              const nextHash = JSON.stringify({
+                companyName: nextSettings.companyName,
+                settings: nextSettings,
+                currencies: nextCurrencies,
+                branches: nextBranches,
+                warehouses: nextWarehouses,
+                costCenters: nextCostCenters,
+                staffUsers: nextStaff,
+                currentStaffUserId: d.currentStaffUserId || nextStaff[0]?.id,
+              });
+              if (nextHash !== lastWorkspaceHashRef.current) {
+                lastWorkspaceHashRef.current = nextHash;
+                remoteApplyingRef.current = true;
+                setSettings(nextSettings);
+                setCurrencies(nextCurrencies);
+                setBranches(nextBranches);
+                setWarehouses(nextWarehouses);
+                setCostCenters(nextCostCenters);
+                setUsers(nextStaff);
+                setCurrentUser((curr) => ({ ...(nextStaff.find((u) => u.id === d.currentStaffUserId) || curr), name: ownerName }));
+                setTimeout(() => {
+                  remoteApplyingRef.current = false;
+                }, 40);
+              }
+            },
+            (err) => {
+              logFirestoreError(err, OperationType.GET, `workspaces/${activeUid}`);
+            }
+          )
+        );
+
+        // Subscribe to all 14 isolated tenant subcollections
+        const applyRemote = <T,>(
+          key: string,
+          setter: React.Dispatch<React.SetStateAction<T[]>>,
+          sortFn?: (a: T, b: T) => number
+        ) => {
+          return (items: T[], syncedMap: Map<string, string>) => {
+            if (cancelled) return;
+            syncedMapsRef.current[key] = syncedMap;
+            hydratedCollectionsRef.current.add(key);
+            remoteApplyingRef.current = true;
+            const ordered = sortFn ? [...items].sort(sortFn) : items;
+            prevSyncedArrayRefs.current[key] = ordered;
+            setter(ordered);
+            setTimeout(() => {
+              remoteApplyingRef.current = false;
+            }, 40);
+          };
+        };
+
+        const sortNewestFirst = <T extends { createdAt?: string }>(a: T, b: T) =>
+          String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+
+        unsubs.push(
+          subscribeSubcollection<Account>(
+            activeUid,
+            'accounts',
+            applyRemote('accounts', setAccounts, (a, b) => a.code.localeCompare(b.code)),
+            formatAccountDoc
+          ),
+          subscribeSubcollection<Product>(
+            activeUid,
+            'products',
+            applyRemote('products', setProducts, (a, b) => a.nameAr.localeCompare(b.nameAr)),
+            formatProductDoc
+          ),
+          subscribeSubcollection<Contact>(
+            activeUid,
+            'contacts',
+            applyRemote('contacts', setContacts, (a, b) => a.name.localeCompare(b.name)),
+            formatContactDoc
+          ),
+          subscribeSubcollection<Invoice>(
+            activeUid,
+            'invoices',
+            applyRemote('invoices', setInvoices, sortNewestFirst),
+            formatInvoiceDoc
+          ),
+          subscribeSubcollection<Quotation>(
+            activeUid,
+            'quotations',
+            applyRemote('quotations', setQuotations, sortNewestFirst),
+            formatQuotationDoc
+          ),
+          subscribeSubcollection<ReturnInvoice>(
+            activeUid,
+            'returnInvoices',
+            applyRemote('returnInvoices', setReturnInvoices, sortNewestFirst),
+            formatReturnInvoiceDoc
+          ),
+          subscribeSubcollection<Voucher>(
+            activeUid,
+            'vouchers',
+            applyRemote('vouchers', setVouchers, sortNewestFirst),
+            formatVoucherDoc
+          ),
+          subscribeSubcollection<JournalEntry>(
+            activeUid,
+            'journalEntries',
+            applyRemote('journalEntries', setJournalEntries, sortNewestFirst),
+            formatJournalEntryDoc
+          ),
+          subscribeSubcollection<StockMovement>(
+            activeUid,
+            'stockMovements',
+            applyRemote('stockMovements', setStockMovements, sortNewestFirst),
+            formatStockMovementDoc
+          ),
+          subscribeSubcollection<StockAdjustment>(
+            activeUid,
+            'stockAdjustments',
+            applyRemote('stockAdjustments', setStockAdjustments, sortNewestFirst),
+            formatStockAdjustmentDoc
+          ),
+          subscribeSubcollection<StockTransfer>(
+            activeUid,
+            'stockTransfers',
+            applyRemote('stockTransfers', setStockTransfers, sortNewestFirst),
+            formatStockTransferDoc
+          ),
+          subscribeSubcollection<StockReceiptNote>(
+            activeUid,
+            'stockReceiptNotes',
+            applyRemote('stockReceiptNotes', setStockReceiptNotes, sortNewestFirst),
+            formatStockReceiptNoteDoc
+          ),
+          subscribeSubcollection<BankReconciliationRecord>(
+            activeUid,
+            'reconciliations',
+            applyRemote('reconciliations', setReconciliations, sortNewestFirst),
+            formatReconciliationDoc
+          ),
+          subscribeSubcollection<AuditLogEntry>(
+            activeUid,
+            'auditLogs',
+            applyRemote('auditLogs', setAuditLogs, (a, b) => String(b.timestamp).localeCompare(String(a.timestamp))),
+            formatAuditLogDoc
+          )
+        );
+
+        cloudHydratedRef.current = true;
+      } catch (err) {
+        console.error('Workspace cloud sync initialization error:', err);
+      }
+    };
+
+    void startSync();
+
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
+  }, [activeUid, isAuthReady, authUser?.emailVerified, tenantCode]);
+
+  // UID-Scoped Offline Cache + Real-time Cloud Diff Sync
+  useEffect(() => {
+    if (!activeUid) return;
+
     const timer = setTimeout(() => {
       try {
-        localStorage.setItem(`${STORAGE_KEY}_settings`, JSON.stringify(settings));
-        localStorage.setItem(`${STORAGE_KEY}_currencies`, JSON.stringify(currencies));
-        localStorage.setItem(`${STORAGE_KEY}_branches`, JSON.stringify(branches));
-        localStorage.setItem(`${STORAGE_KEY}_warehouses`, JSON.stringify(warehouses));
-        localStorage.setItem(`${STORAGE_KEY}_cost_centers`, JSON.stringify(costCenters));
-        localStorage.setItem(`${STORAGE_KEY}_accounts`, JSON.stringify(accounts));
-        localStorage.setItem(`${STORAGE_KEY}_products`, JSON.stringify(products));
-        localStorage.setItem(`${STORAGE_KEY}_contacts`, JSON.stringify(contacts));
-        localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify(invoices));
-        localStorage.setItem(`${STORAGE_KEY}_quotations`, JSON.stringify(quotations));
-        localStorage.setItem(`${STORAGE_KEY}_returns`, JSON.stringify(returnInvoices));
-        localStorage.setItem(`${STORAGE_KEY}_transfers`, JSON.stringify(stockTransfers));
-        localStorage.setItem(`${STORAGE_KEY}_receipt_notes`, JSON.stringify(stockReceiptNotes));
-        localStorage.setItem(`${STORAGE_KEY}_vouchers`, JSON.stringify(vouchers));
-        localStorage.setItem(`${STORAGE_KEY}_journal`, JSON.stringify(journalEntries));
-        localStorage.setItem(`${STORAGE_KEY}_stock_movements`, JSON.stringify(stockMovements));
-        localStorage.setItem(`${STORAGE_KEY}_stock_adjustments`, JSON.stringify(stockAdjustments));
-        localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
-        localStorage.setItem(`${STORAGE_KEY}_current_user_id`, currentUser?.id || 'usr-admin');
-        localStorage.setItem(`${STORAGE_KEY}_audit_logs`, JSON.stringify(auditLogs));
-        localStorage.setItem(`${STORAGE_KEY}_reconciliations`, JSON.stringify(reconciliations));
+        const prev = prevSyncStateRef.current;
+        const syncLocal = (refKey: string, suffix: string, value: unknown) => {
+          if (prev[refKey] !== value) {
+            localStorage.setItem(`${tenantPrefix}_${suffix}`, JSON.stringify(value));
+            prev[refKey] = value;
+          }
+        };
+
+        syncLocal('settings', 'settings', settings);
+        syncLocal('currencies', 'currencies', currencies);
+        syncLocal('branches', 'branches', branches);
+        syncLocal('warehouses', 'warehouses', warehouses);
+        syncLocal('costCenters', 'cost_centers', costCenters);
+        syncLocal('accounts', 'accounts', accounts);
+        syncLocal('products', 'products', products);
+        syncLocal('contacts', 'contacts', contacts);
+        syncLocal('invoices', 'invoices', invoices);
+        syncLocal('quotations', 'quotations', quotations);
+        syncLocal('returnInvoices', 'returns', returnInvoices);
+        syncLocal('stockTransfers', 'transfers', stockTransfers);
+        syncLocal('stockReceiptNotes', 'receipt_notes', stockReceiptNotes);
+        syncLocal('vouchers', 'vouchers', vouchers);
+        syncLocal('journalEntries', 'journal', journalEntries);
+        syncLocal('stockMovements', 'stock_movements', stockMovements);
+        syncLocal('stockAdjustments', 'stock_adjustments', stockAdjustments);
+        syncLocal('users', 'users', users);
+        syncLocal('auditLogs', 'audit_logs', auditLogs);
+        syncLocal('reconciliations', 'reconciliations', reconciliations);
       } catch (err) {
-        console.warn('Storage sync warning:', err);
+        console.warn('Tenant offline cache sync warning:', err);
       }
-    }, 150);
+
+      if (!cloudHydratedRef.current || remoteApplyingRef.current || syncedUidRef.current !== activeUid) {
+        return;
+      }
+
+      // 1. Sync Workspace Root (settings, currencies, branches, warehouses, costCenters, staffUsers)
+      const wsPayload = {
+        companyName: settings.companyName || 'الغفاري سوفت برو',
+        settings,
+        currencies,
+        branches,
+        warehouses,
+        costCenters,
+        staffUsers: users,
+        currentStaffUserId: currentUser?.id || 'usr-admin',
+      };
+      const wsHash = JSON.stringify(wsPayload);
+      if (wsHash !== lastWorkspaceHashRef.current) {
+        lastWorkspaceHashRef.current = wsHash;
+        void syncWorkspaceRootToFirestore(activeUid, wsPayload);
+      }
+
+      // 2. Diff-sync only subcollections whose array reference changed to avoid redundant serialization
+      const syncCol = async <T extends { id: string }>(
+        colName: Parameters<typeof syncCollectionDiffToFirestore>[1],
+        items: T[],
+        formatter: (item: T, uid: string) => Record<string, unknown>
+      ) => {
+        if (!hydratedCollectionsRef.current.has(colName)) return;
+        if (prevSyncedArrayRefs.current[colName] === items) return;
+        prevSyncedArrayRefs.current[colName] = items;
+        const prevMap = syncedMapsRef.current[colName] || new Map<string, string>();
+        const nextMap = await syncCollectionDiffToFirestore(activeUid, colName, items, prevMap, formatter);
+        syncedMapsRef.current[colName] = nextMap;
+      };
+
+      void Promise.all([
+        syncCol('accounts', accounts, formatAccountDoc),
+        syncCol('products', products, formatProductDoc),
+        syncCol('contacts', contacts, formatContactDoc),
+        syncCol('invoices', invoices, formatInvoiceDoc),
+        syncCol('quotations', quotations, formatQuotationDoc),
+        syncCol('returnInvoices', returnInvoices, formatReturnInvoiceDoc),
+        syncCol('vouchers', vouchers, formatVoucherDoc),
+        syncCol('journalEntries', journalEntries, formatJournalEntryDoc),
+        syncCol('stockMovements', stockMovements, formatStockMovementDoc),
+        syncCol('stockAdjustments', stockAdjustments, formatStockAdjustmentDoc),
+        syncCol('stockTransfers', stockTransfers, formatStockTransferDoc),
+        syncCol('stockReceiptNotes', stockReceiptNotes, formatStockReceiptNoteDoc),
+        syncCol('reconciliations', reconciliations, formatReconciliationDoc),
+        syncCol('auditLogs', auditLogs, formatAuditLogDoc),
+      ]).catch((err) => {
+        console.error('Firestore collection sync error:', err);
+      });
+
+      // 3. Keep isolated auditSummary KPI doc updated (only readable by Admin when owner authorizes)
+      const totalSalesBase = invoices
+        .filter((inv) => inv.type === 'SALES' && inv.workflowStatus !== 'VOID')
+        .reduce((sum, inv) => sum + (inv.grandTotalBase || inv.grandTotal || 0), 0);
+      const snapshotPayload = {
+        companyName: settings.companyName || 'الغفاري سوفت برو',
+        baseCurrency: settings.baseCurrency || 'SAR',
+        invoicesCount: invoices.length,
+        vouchersCount: vouchers.length,
+        productsCount: products.length,
+        contactsCount: contacts.length,
+        journalEntriesCount: journalEntries.length,
+        totalSalesBase: Math.round(totalSalesBase * 100) / 100,
+      };
+      const snapHash = JSON.stringify(snapshotPayload);
+      if (snapHash !== lastSnapshotHashRef.current) {
+        lastSnapshotHashRef.current = snapHash;
+        void syncAuditSnapshotToFirestore(activeUid, snapshotPayload);
+      }
+    }, 180);
 
     return () => clearTimeout(timer);
   }, [
+    activeUid,
+    tenantPrefix,
     settings,
     currencies,
     branches,
@@ -607,33 +937,51 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     reconciliations,
   ]);
 
-  // Inventory & COGS Summary
-  const totalItemsCount = products.length;
-  const totalUnitsInStock = products.reduce((sum, p) => sum + p.stockQty, 0);
-  const totalCostValue = products.reduce((sum, p) => sum + p.stockQty * p.costPrice, 0);
-  const totalRetailValue = products.reduce((sum, p) => sum + p.stockQty * p.salePrice, 0);
-  const potentialProfit = totalRetailValue - totalCostValue;
-  const potentialMarginPercent =
-    totalRetailValue > 0 ? (potentialProfit / totalRetailValue) * 100 : 0;
+  // Inventory & COGS Summary - Optimized with Single-Pass useMemo for Instant Response
+  const lowStockItems = useMemo(
+    () => products.filter((p) => p.stockQty <= p.minStockAlert),
+    [products]
+  );
 
-  const lowStockItems = products.filter((p) => p.stockQty <= p.minStockAlert);
-  const outOfStockItemsCount = products.filter((p) => p.stockQty <= 0).length;
+  const inventorySummary: InventoryValuationSummary = useMemo(() => {
+    const totalItemsCount = products.length;
+    let totalUnitsInStock = 0;
+    let totalCostValue = 0;
+    let totalRetailValue = 0;
+    let outOfStockItemsCount = 0;
 
-  const periodCogsTotal = stockMovements
-    .filter((m) => m.type === 'SALE')
-    .reduce((sum, m) => sum + Math.abs(m.quantityChange) * m.unitCost, 0);
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      totalUnitsInStock += p.stockQty;
+      totalCostValue += p.stockQty * p.costPrice;
+      totalRetailValue += p.stockQty * p.salePrice;
+      if (p.stockQty <= 0) outOfStockItemsCount++;
+    }
 
-  const inventorySummary: InventoryValuationSummary = {
-    totalItemsCount,
-    totalUnitsInStock,
-    totalCostValue: Math.round(totalCostValue * 100) / 100,
-    totalRetailValue: Math.round(totalRetailValue * 100) / 100,
-    potentialProfit: Math.round(potentialProfit * 100) / 100,
-    potentialMarginPercent: Math.round(potentialMarginPercent * 10) / 10,
-    lowStockItemsCount: lowStockItems.length,
-    outOfStockItemsCount,
-    periodCogsTotal: Math.round(periodCogsTotal * 100) / 100,
-  };
+    const potentialProfit = totalRetailValue - totalCostValue;
+    const potentialMarginPercent =
+      totalRetailValue > 0 ? (potentialProfit / totalRetailValue) * 100 : 0;
+
+    let periodCogsTotal = 0;
+    for (let j = 0; j < stockMovements.length; j++) {
+      const m = stockMovements[j];
+      if (m.type === 'SALE') {
+        periodCogsTotal += Math.abs(m.quantityChange) * m.unitCost;
+      }
+    }
+
+    return {
+      totalItemsCount,
+      totalUnitsInStock,
+      totalCostValue: Math.round(totalCostValue * 100) / 100,
+      totalRetailValue: Math.round(totalRetailValue * 100) / 100,
+      potentialProfit: Math.round(potentialProfit * 100) / 100,
+      potentialMarginPercent: Math.round(potentialMarginPercent * 10) / 10,
+      lowStockItemsCount: lowStockItems.length,
+      outOfStockItemsCount,
+      periodCogsTotal: Math.round(periodCogsTotal * 100) / 100,
+    };
+  }, [products, stockMovements, lowStockItems.length]);
 
   /**
    * Action: Create Sales Invoice
@@ -2171,7 +2519,13 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const updateSettings = (updates: Partial<SystemSettings>) => {
-    setSettings((prev) => ({ ...prev, ...updates }));
+    setSettings((prev) => {
+      const next = { ...prev, ...updates };
+      if (updates.companyName && updates.companyName !== prev.companyName) {
+        void updateProfileCompanyName(updates.companyName);
+      }
+      return next;
+    });
   };
 
   const updateCurrencyRate = (code: string, newRate: number) => {
@@ -2247,16 +2601,24 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   /**
-   * Radical Complete Reset (تصفير جذري شامل لجميع البيانات)
+   * Radical Complete Reset (تصفير جذري شامل لجميع بيانات هذا الحساب المستقل فقط)
    */
   const radicalFactoryReset = () => {
-    localStorage.clear();
+    if (activeUid) {
+      const prefix = `${tenantPrefix}_`;
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix)) keysToRemove.push(k);
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    }
     setSettings(INITIAL_SETTINGS);
     setCurrencies(INITIAL_CURRENCIES);
-    setBranches(INITIAL_BRANCHES);
+    setBranches(filterCleanBranches(INITIAL_BRANCHES));
     setWarehouses(INITIAL_WAREHOUSES);
     setCostCenters(INITIAL_COST_CENTERS);
-    setAccounts(INITIAL_ACCOUNTS.map((a) => ({ ...a, balance: 0 })));
+    setAccounts(filterCleanAccounts(INITIAL_ACCOUNTS).map((a) => ({ ...a, balance: 0 })));
     setProducts([]);
     setContacts([]);
     setInvoices([]);
@@ -2268,7 +2630,8 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setJournalEntries([]);
     setStockMovements([]);
     setStockAdjustments([]);
-    window.location.reload();
+    setReconciliations([]);
+    setAuditLogs([]);
   };
 
   /**
@@ -2314,7 +2677,9 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const exportDatabaseJson = () => {
     const backup = {
-      version: '3.0',
+      version: '4.0-isolated',
+      ownerUid: activeUid || '',
+      tenantCode: tenantCode || '',
       exportedAt: new Date().toISOString(),
       settings,
       currencies,
@@ -2333,6 +2698,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       journalEntries,
       stockMovements,
       stockAdjustments,
+      reconciliations,
     };
     return JSON.stringify(backup, null, 2);
   };
@@ -2341,12 +2707,12 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       const data = JSON.parse(json);
       if (data.accounts) {
-        if (data.settings) setSettings(data.settings);
+        if (data.settings) setSettings(mergeSettingsWithDefaults(data.settings));
         if (data.currencies) setCurrencies(data.currencies);
-        if (data.branches) setBranches(data.branches);
+        if (data.branches) setBranches(filterCleanBranches(data.branches));
         if (data.warehouses) setWarehouses(data.warehouses);
         if (data.costCenters) setCostCenters(data.costCenters);
-        if (data.accounts) setAccounts(data.accounts);
+        if (data.accounts) setAccounts(filterCleanAccounts(data.accounts));
         if (data.products) setProducts(data.products);
         if (data.contacts) setContacts(data.contacts);
         if (data.invoices) setInvoices(data.invoices);
@@ -2358,6 +2724,7 @@ export const AccountingProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (data.journalEntries) setJournalEntries(data.journalEntries);
         if (data.stockMovements) setStockMovements(data.stockMovements);
         if (data.stockAdjustments) setStockAdjustments(data.stockAdjustments);
+        if (data.reconciliations) setReconciliations(data.reconciliations);
         return true;
       }
       return false;

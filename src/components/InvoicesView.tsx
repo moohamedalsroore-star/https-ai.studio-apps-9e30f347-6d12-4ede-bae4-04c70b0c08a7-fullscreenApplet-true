@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Receipt,
   Plus,
@@ -19,6 +19,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { Invoice, PaymentMethod, Product, PriceTier } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout } from './UnifiedDocumentLayout';
 import { FreeNumberInput } from './FreeNumberInput';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { ProductQuickSearchModal } from './ProductQuickSearchModal';
@@ -77,19 +78,29 @@ export const InvoicesView: React.FC = () => {
     }[]
   >([]);
 
-  const salesInvoices = invoices.filter((i) => i.type === 'SALES');
+  const salesInvoices = useMemo(
+    () => invoices.filter((i) => i.type === 'SALES'),
+    [invoices]
+  );
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
   // Active selected invoice in database:
-  const activeInvoice = salesInvoices.find((i) => i.id === selectedInvoiceId) || salesInvoices[0] || null;
+  const activeInvoice = useMemo(
+    () => salesInvoices.find((i) => i.id === selectedInvoiceId) || salesInvoices[0] || null,
+    [salesInvoices, selectedInvoiceId]
+  );
 
-  const filteredInvoices = salesInvoices.filter((inv) => {
-    const matchesSearch =
-      inv.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.partyName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = filterStatus === 'ALL' || inv.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredInvoices = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return salesInvoices.filter((inv) => {
+      const matchesSearch =
+        !q ||
+        inv.invoiceNumber.toLowerCase().includes(q) ||
+        inv.partyName.toLowerCase().includes(q);
+      const matchesStatus = filterStatus === 'ALL' || inv.status === filterStatus;
+      return matchesSearch && matchesStatus;
+    });
+  }, [salesInvoices, searchQuery, filterStatus]);
 
   const getProductPriceForTier = (prod: Product, tier: PriceTier = priceTier) => {
     if (tier === 'SUPER_WHOLESALE') return prod.specialPrice || prod.wholesalePrice || prod.salePrice;
@@ -553,8 +564,8 @@ export const InvoicesView: React.FC = () => {
 
       {/* CREATE INVOICE MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90dvh] my-auto overscroll-contain overflow-hidden">
             <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-emerald-400" />
@@ -579,7 +590,7 @@ export const InvoicesView: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSaveInvoice} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
+            <form onSubmit={handleSaveInvoice} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-6 sm:pb-6 touch-pan-y">
               {/* Header Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
                 <div>
@@ -934,8 +945,8 @@ export const InvoicesView: React.FC = () => {
 
       {/* INVOICE PREVIEW MODAL */}
       {previewInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto no-print-bg">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden print-only-wrapper">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm">معاينة الفاتورة: {previewInvoice.invoiceNumber}</span>
@@ -966,69 +977,58 @@ export const InvoicesView: React.FC = () => {
               </div>
             </div>
 
-            <div id="invoice-print-content" className="p-8 text-right printable-card text-xs space-y-4">
-              <div className="text-center border-b-2 border-slate-900 pb-3">
-                <h3 className="text-lg font-black">{settings.companyName}</h3>
-                <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-                <div className="font-bold text-sm text-slate-900 mt-2">فاتورة مبيعات ضريبية</div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl">
-                <div>
-                  <div><span className="font-bold">رقم الفاتورة:</span> {previewInvoice.invoiceNumber}</div>
-                  <div><span className="font-bold">التاريخ:</span> {previewInvoice.date}</div>
+            <div id="invoice-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle="فاتورة مبيعات ضريبية"
+                documentSubtitle="فاتورة رسمية معتمدة وفق متطلبات الفاتورة الإلكترونية"
+                documentNumber={previewInvoice.invoiceNumber}
+                documentDate={previewInvoice.date}
+                documentTypeBadge="مبيعات نقدية / آجلة"
+                partyLabel="العميل"
+                partyName={previewInvoice.partyName}
+                partyTaxNumber={contacts.find(c => c.name === previewInvoice.partyName)?.taxNumber}
+                partyPhone={contacts.find(c => c.name === previewInvoice.partyName)?.phone}
+                partyAddress={contacts.find(c => c.name === previewInvoice.partyName)?.address}
+                paymentMethod={previewInvoice.paymentMethod}
+                currency={previewInvoice.currency || settings.baseCurrency}
+                subtotal={previewInvoice.subtotal}
+                discount={previewInvoice.discountTotal}
+                taxTotal={previewInvoice.taxTotal}
+                grandTotal={previewInvoice.grandTotal}
+                notes={previewInvoice.notes}
+                referenceNumber={previewInvoice.journalEntryId}
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                    <thead>
+                      <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">اسم الصنف / البيان</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">السعر</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الخصم</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewInvoice.items.map((it, idx) => (
+                        <tr key={it.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono text-rose-700">{(it.discount || 0).toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div>
-                  <div><span className="font-bold">العميل:</span> {previewInvoice.partyName}</div>
-                  <div><span className="font-bold">طريقة السداد:</span> {previewInvoice.paymentMethod}</div>
-                </div>
-              </div>
-
-              <table className="w-full text-right border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-900 bg-slate-200">
-                    <th className="py-2 px-2">الصنف</th>
-                    <th className="py-2 px-2 text-center">الكمية</th>
-                    <th className="py-2 px-2 text-center">السعر</th>
-                    <th className="py-2 px-2 text-center">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300">
-                  {previewInvoice.items.map((it) => (
-                    <tr key={it.id}>
-                      <td className="py-2 px-2 font-bold">{it.productName}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="border-t-2 border-slate-900 pt-3 flex justify-between">
-                <div className="text-xs text-slate-600">
-                  <div>القيد الآلي المرتبط: {previewInvoice.journalEntryId || 'مرحل'}</div>
-                </div>
-                <div className="w-48 space-y-1 font-mono-num text-xs">
-                  <div className="flex justify-between">
-                    <span>الصافي:</span>
-                    <span>{previewInvoice.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>الضريبة:</span>
-                    <span>{previewInvoice.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                    <span>الإجمالي:</span>
-                    <span>{previewInvoice.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-                <span className="font-bold">المبلغ كتابة:</span>{' '}
-                {tafqeet(previewInvoice.grandTotal, settings.baseCurrency, 'هللة')}
-              </div>
+              </UnifiedDocumentLayout>
             </div>
           </div>
         </div>
@@ -1036,69 +1036,58 @@ export const InvoicesView: React.FC = () => {
 
       {/* Hidden Print Container for the Active Selected Invoice (Used by top action bar) */}
       {activeInvoice && (
-        <div id="selected-invoice-document-card" className="hidden print:block printable-card p-8 text-right text-xs space-y-4">
-          <div className="text-center border-b-2 border-slate-900 pb-3">
-            <h3 className="text-lg font-black text-slate-900">{settings.companyName}</h3>
-            <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-            <div className="font-bold text-sm text-slate-900 mt-2">فاتورة مبيعات ضريبية رسمية</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl text-slate-900">
-            <div>
-              <div><span className="font-bold">رقم الفاتورة:</span> {activeInvoice.invoiceNumber}</div>
-              <div><span className="font-bold">التاريخ:</span> {activeInvoice.date}</div>
+        <div id="selected-invoice-document-card" className="hidden print:block printable-card p-2 sm:p-4 text-right">
+          <UnifiedDocumentLayout
+            documentTitle="فاتورة مبيعات ضريبية رسمية"
+            documentSubtitle="فاتورة رسمية معتمدة وفق متطلبات الفاتورة الإلكترونية"
+            documentNumber={activeInvoice.invoiceNumber}
+            documentDate={activeInvoice.date}
+            documentTypeBadge="مبيعات نقدية / آجلة"
+            partyLabel="العميل"
+            partyName={activeInvoice.partyName}
+            partyTaxNumber={contacts.find(c => c.name === activeInvoice.partyName)?.taxNumber}
+            partyPhone={contacts.find(c => c.name === activeInvoice.partyName)?.phone}
+            partyAddress={contacts.find(c => c.name === activeInvoice.partyName)?.address}
+            paymentMethod={activeInvoice.paymentMethod}
+            currency={activeInvoice.currency || settings.baseCurrency}
+            subtotal={activeInvoice.subtotal}
+            discount={activeInvoice.discountTotal}
+            taxTotal={activeInvoice.taxTotal}
+            grandTotal={activeInvoice.grandTotal}
+            notes={activeInvoice.notes}
+            referenceNumber={activeInvoice.journalEntryId}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                <thead>
+                  <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                    <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                    <th className="py-2 px-2 border border-slate-400">اسم الصنف / البيان</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">السعر</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الخصم</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-300">
+                  {activeInvoice.items.map((it, idx) => (
+                    <tr key={it.id} className="hover:bg-slate-50">
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                      <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono text-rose-700">{(it.discount || 0).toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <div><span className="font-bold">العميل:</span> {activeInvoice.partyName}</div>
-              <div><span className="font-bold">طريقة السداد:</span> {activeInvoice.paymentMethod}</div>
-            </div>
-          </div>
-
-          <table className="w-full text-right border-collapse text-xs text-slate-900">
-            <thead>
-              <tr className="border-b-2 border-slate-900 bg-slate-200">
-                <th className="py-2 px-2">الصنف</th>
-                <th className="py-2 px-2 text-center">الكمية</th>
-                <th className="py-2 px-2 text-center">السعر</th>
-                <th className="py-2 px-2 text-center">الإجمالي</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-300">
-              {activeInvoice.items.map((it) => (
-                <tr key={it.id}>
-                  <td className="py-2 px-2 font-bold">{it.productName}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="border-t-2 border-slate-900 pt-3 flex justify-between text-slate-900">
-            <div className="text-xs text-slate-600">
-              <div>القيد الآلي المرتبط: {activeInvoice.journalEntryId || 'مرحل'}</div>
-            </div>
-            <div className="w-48 space-y-1 font-mono-num text-xs">
-              <div className="flex justify-between">
-                <span>الصافي:</span>
-                <span>{activeInvoice.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>الضريبة:</span>
-                <span>{activeInvoice.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                <span>الإجمالي:</span>
-                <span>{activeInvoice.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-            <span className="font-bold">المبلغ كتابة:</span>{' '}
-            {tafqeet(activeInvoice.grandTotal, settings.baseCurrency, 'هللة')}
-          </div>
+          </UnifiedDocumentLayout>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -20,10 +20,13 @@ import {
   RotateCcw,
   Sparkles,
   Calendar,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { generateIncomeStatement } from '../utils/accountingEngine';
-import { CyberLaptopGraphic } from './CyberLaptopGraphic';
+import { SmartNotificationsBoard } from './SmartNotificationsBoard';
+import { MainMenuUnifiedGrid } from './MainMenuUnifiedGrid';
 
 export const DashboardView: React.FC = () => {
   const {
@@ -38,155 +41,81 @@ export const DashboardView: React.FC = () => {
     inventorySummary,
   } = useAccounting();
 
-  const incomeStatement = generateIncomeStatement(accounts);
+  const incomeStatement = useMemo(() => generateIncomeStatement(accounts), [accounts]);
 
-  // Cash & Liquidity Accounts
-  const cashAcc = accounts.find((a) => a.code === '1101');
-  const posAcc = accounts.find((a) => a.code === '1102');
-  const otherCashAccounts = accounts.filter(
-    (a) => a.parentCode === '11' && a.code !== '1101' && a.code !== '1102' && a.code !== '1105' && a.code !== '1106'
-  );
+  const { cashAcc, posAcc, otherCashAccounts, totalLiquid } = useMemo(() => {
+    const cash = accounts.find((a) => a.code === '1101');
+    const pos = accounts.find((a) => a.code === '1102');
+    const others = accounts.filter(
+      (a) => a.parentCode === '11' && a.code !== '1101' && a.code !== '1102' && a.code !== '1105' && a.code !== '1106'
+    );
+    const liquid =
+      (cash?.balance || 0) +
+      (pos?.balance || 0) +
+      others.reduce((sum, a) => sum + (a.balance || 0), 0);
+    return { cashAcc: cash, posAcc: pos, otherCashAccounts: others, totalLiquid: liquid };
+  }, [accounts]);
 
-  const totalLiquid =
-    (cashAcc?.balance || 0) +
-    (posAcc?.balance || 0) +
-    otherCashAccounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+  const { totalReceivables, totalPayables } = useMemo(() => {
+    let rec = 0;
+    let pay = 0;
+    for (let i = 0; i < contacts.length; i++) {
+      const c = contacts[i];
+      if (c.type === 'CUSTOMER') rec += c.balance;
+      else if (c.type === 'SUPPLIER') pay += c.balance;
+    }
+    return { totalReceivables: rec, totalPayables: pay };
+  }, [contacts]);
 
-  const totalReceivables = contacts
-    .filter((c) => c.type === 'CUSTOMER')
-    .reduce((sum, c) => sum + c.balance, 0);
-
-  const totalPayables = contacts
-    .filter((c) => c.type === 'SUPPLIER')
-    .reduce((sum, c) => sum + c.balance, 0);
-
-  const recentInvoices = invoices.slice(0, 5);
-  const recentEntries = journalEntries.slice(0, 5);
+  const recentInvoices = useMemo(() => invoices.slice(0, 5), [invoices]);
+  const recentEntries = useMemo(() => journalEntries.slice(0, 5), [journalEntries]);
 
   return (
     <div className="space-y-6">
-      {/* Premium Neon Dark Hero Showcase Card (مطابق تماماً للصورة المرجعية) */}
-      <div className="neon-border-card">
-        <div className="neon-border-card-inner p-5 sm:p-7 relative overflow-hidden">
-          {/* Subtle Ambient Glow */}
-          <div className="absolute top-0 right-1/4 w-80 h-80 rounded-full bg-blue-600/15 blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-1/4 w-80 h-80 rounded-full bg-purple-600/15 blur-3xl pointer-events-none" />
+      {/* 
+        =======================================================================
+        Golden Luxury Showcase Banner: Image 2 (Replacing Image 1)
+        =======================================================================
+      */}
+      <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_0_35px_rgba(0,180,255,0.45)] border-2 border-cyan-400/60 bg-[#020b27] group">
+        {/* Ambient Glow */}
+        <div className="absolute -top-10 -right-10 w-64 h-64 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-10 -left-10 w-64 h-64 rounded-full bg-cyan-500/20 blur-3xl pointer-events-none" />
 
-          {/* Top Status Indicator with Green Neon Checkmark */}
-          <div className="flex items-center justify-between gap-3 border-b border-blue-900/50 pb-3.5 mb-5">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-400/50 shadow-[0_0_14px_rgba(0,217,154,0.4)] text-emerald-300 text-xs font-bold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
-              <span>النظام المحاسبي متصل ويعمل بالكامل - جميع القيود ترحل آلياً</span>
-            </div>
-            <span className="text-[11px] text-[#AAB8D6] font-mono-num hidden sm:inline">
-              PRO Engine v1.0 • متصل وآمن
-            </span>
-          </div>
+        <div className="relative">
+          <img
+            src="/assets/aistudio/file_00000000e4f08208a601cf9a623e0b66_a4ff8c63.png"
+            alt="الغفاري سوفت برو - Al-Ghafari Soft Pro"
+            className="w-full h-auto object-cover rounded-2xl sm:rounded-3xl block select-none pointer-events-none"
+            loading="eager"
+          />
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-            {/* Right Column: Title, Badges, Tip, Description, and Action Buttons (8 cols) */}
-            <div className="lg:col-span-8 space-y-4">
-              <div>
-                <h2 className="text-3xl sm:text-4xl font-black text-[#F5F8FF] tracking-tight drop-shadow-[0_0_12px_rgba(255,255,255,0.3)]">
-                  {settings.companyName || 'الغفاري سوفت برو'}
-                </h2>
-                
-                {/* Sector Badge: Emerald Green Pill like reference image */}
-                <div className="inline-flex items-center gap-2 mt-2 px-4 py-1 rounded-full bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold text-xs shadow-[0_0_16px_rgba(0,217,154,0.5)] border border-emerald-300/80">
-                  <Calendar className="w-3.5 h-3.5 text-white" />
-                  <span>
-                    {settings.businessSector === 'RETAIL'
-                      ? 'نشاط تجزئة وتموينات'
-                      : settings.businessSector === 'WHOLESALE'
-                      ? 'نشاط جملة وتوزيع'
-                      : settings.businessSector === 'RESTAURANT'
-                      ? 'مطاعم ومقاهي'
-                      : settings.businessSector === 'SERVICES'
-                      ? 'خدمات واستشارات'
-                      : settings.businessSector === 'CONTRACTING'
-                      ? 'مقاولات وورش'
-                      : settings.businessSector === 'PERSONAL'
-                      ? 'حسابات شخصية وإدارة ديون'
-                      : settings.businessSector === 'PHARMACY'
-                      ? 'صيدليات ومراكز طبية'
-                      : 'نظام عام لكافة الانشطة التجارية'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Editable Name Tip (Electric Cyan Glow) */}
-              <button
-                type="button"
-                onClick={() => setActiveView('settings')}
-                className="text-xs sm:text-sm font-bold text-[#00C8FF] hover:text-[#5ce1e6] flex items-center gap-1.5 cursor-pointer transition-all drop-shadow-[0_0_8px_rgba(0,200,255,0.5)]"
-                title="انقر لتعديل الاسم التجاري الخاص بك من إعدادات التطبيق"
-              >
-                <span>💡 يمكنك تغيير الاسم التجاري الخاص بك من إعدادات التطبيق</span>
-              </button>
-
-              {/* Description */}
-              <p className="text-xs sm:text-sm text-[#AAB8D6] leading-relaxed max-w-xl">
-                تطبيق الغفاري سوفت برو - Al-Ghafari Soft Pro - إدارة شاملة: مبيعات، مشتريات، كاشير POS، رقابة المخزون والديون، تعدد العملات، والقوائم المالية
-              </p>
-
-              {/* Neon Quick Action Buttons Grid (Exact reference image styling) */}
-              <div className="pt-2 space-y-2.5">
-                {/* Row 1: POS (Large Emerald) + Sales Invoice (Electric Blue) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setActiveView('pos')}
-                    className="flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-[#00D99A] via-[#00C78A] to-[#00A876] hover:from-[#00F0AB] hover:to-[#00BD85] text-white font-black text-sm shadow-[0_0_25px_rgba(0,217,154,0.7)] border-2 border-emerald-200/90 cursor-pointer transition-all active:scale-95 group"
-                  >
-                    <ShoppingCart className="w-5 h-5 text-white group-hover:scale-110 transition-transform stroke-[2.5]" />
-                    <span className="text-base tracking-wide">نقطة البيع (POS)</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveView('invoices')}
-                    className="flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-[#075BFF] via-[#0084FF] to-[#00C8FF] hover:from-[#0066FF] hover:to-[#00E5FF] text-white font-black text-sm shadow-[0_0_22px_rgba(0,200,255,0.6)] border border-cyan-300/80 cursor-pointer transition-all active:scale-95 group"
-                  >
-                    <Receipt className="w-5 h-5 text-cyan-100 group-hover:scale-110 transition-transform stroke-[2.5]" />
-                    <span className="text-base tracking-wide">فاتورة مبيعات</span>
-                  </button>
-                </div>
-
-                {/* Row 2: Purchases (Purple) + Quotations (Royal Blue) + Returns (Deep Violet) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <button
-                    onClick={() => setActiveView('purchases')}
-                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-[#7900FF] via-[#6100E0] to-[#4200A8] hover:from-[#8F1AFF] hover:to-[#5500D4] text-white font-black text-xs sm:text-sm shadow-[0_0_18px_rgba(121,0,255,0.55)] border border-purple-400/60 cursor-pointer transition-all active:scale-95 group"
-                  >
-                    <Truck className="w-4 h-4 text-amber-300 group-hover:scale-110 transition-transform" />
-                    <span>فاتورة شراء</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveView('quotations')}
-                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-[#075BFF] to-[#0084FF] hover:from-[#1A6BFF] hover:to-[#0099FF] text-white font-black text-xs sm:text-sm shadow-[0_0_18px_rgba(7,91,255,0.55)] border border-cyan-400/60 cursor-pointer transition-all active:scale-95 group"
-                  >
-                    <BookOpen className="w-4 h-4 text-cyan-200 group-hover:scale-110 transition-transform" />
-                    <span>عرض سعر</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveView('returns')}
-                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-[#4200A8] via-[#7900FF] to-[#A800FF] hover:from-[#5200D4] hover:to-[#C000FF] text-white font-black text-xs sm:text-sm shadow-[0_0_18px_rgba(168,0,255,0.45)] border border-purple-400/50 cursor-pointer transition-all active:scale-95 group"
-                  >
-                    <ArrowDownLeft className="w-4 h-4 text-rose-300 group-hover:scale-110 transition-transform" />
-                    <span>مردودات</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Left Column: 3D Laptop with Charts & Gold Coins Graphic (4 cols) */}
-            <div className="lg:col-span-4 flex items-center justify-center">
-              <CyberLaptopGraphic className="w-64 sm:w-80 h-64 sm:h-80" />
-            </div>
-          </div>
+          {/* Interactive Clickable Bottom Bar: Navigates to Settings */}
+          <button
+            type="button"
+            onClick={() => setActiveView('settings')}
+            className="absolute bottom-0 inset-x-0 h-[15%] cursor-pointer group-hover:bg-cyan-400/5 transition-colors flex items-center justify-center"
+            title="انقر لتعديل الاسم التجاري من إعدادات التطبيق"
+            aria-label="تغيير الاسم التجاري من إعدادات التطبيق"
+          >
+            <span className="sr-only">تغيير الاسم التجاري من إعدادات التطبيق</span>
+          </button>
         </div>
+
+        {/* Custom Company Name Badge if user modified default name */}
+        {settings.companyName && settings.companyName !== 'الغفاري سوفت برو' && (
+          <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/85 border border-amber-400/60 text-amber-300 text-xs font-bold backdrop-blur-md shadow-lg">
+            <span>المنشأة: {settings.companyName}</span>
+          </div>
+        )}
       </div>
+
+      {/* 
+        =======================================================================
+        The Complete Unified Features Menu (Replaces the old 5 buttons entirely!)
+        =======================================================================
+      */}
+      <MainMenuUnifiedGrid />
 
       <div id="dashboard-analytics-content" className="space-y-6 printable-card">
         {/* Printable Executive Report Header (visible on print/preview) */}
@@ -199,31 +128,10 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-      {/* Low Stock Alert Strip if any */}
-      {lowStockItems.length > 0 && (
-        <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between gap-4 animate-pulse">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-white text-sm">
-                تنبيه نقص المخزون: يوجد {lowStockItems.length} صنف وصل إلى حد إعادة الطلب أو نفد!
-              </h4>
-              <p className="text-xs text-slate-300">
-                منها {inventorySummary.outOfStockItemsCount} صنف نفد تماماً. بادر بطلب التوريد لضمان استمرار المبيعات.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setActiveView('inventory')}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer transition-colors"
-          >
-            عرض نواقص المخزون
-          </button>
-        </div>
-      )}
+      {/* Smart Notifications & Live Alerts Board (نواقص المخزون، فواتير مستحقة، تذكيرات المواعيد) */}
+      <div id="smart-notifications-board-section">
+        <SmartNotificationsBoard onNavigateView={setActiveView} />
+      </div>
 
       {/* 4 Main Core Financial KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

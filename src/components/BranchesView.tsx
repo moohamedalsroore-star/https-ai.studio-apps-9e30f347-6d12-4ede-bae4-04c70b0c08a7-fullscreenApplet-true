@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Building2,
   Plus,
@@ -11,6 +12,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
+import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 
 export const BranchesView: React.FC = () => {
   const {
@@ -29,6 +32,7 @@ export const BranchesView: React.FC = () => {
     showToast,
     branchActionModal,
     setBranchActionModal,
+    settings,
   } = useAccounting();
 
   const [activeTab, setActiveTab] = useState<'BRANCHES' | 'WAREHOUSES' | 'COST_CENTERS'>('BRANCHES');
@@ -128,7 +132,13 @@ export const BranchesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <DocumentActionsBar
+            targetElementId="branches-directory-content"
+            filename={`دليل_الفروع_والمستودعات_${settings.companyName}`}
+            documentTitle="سجل الفروع والمستودعات ومراكز التكلفة"
+            hasData={branches.length > 0 || warehouses.length > 0 || costCenters.length > 0}
+          />
           {activeTab === 'BRANCHES' && (
             <button
               onClick={() => setShowAddBranch(true)}
@@ -159,8 +169,104 @@ export const BranchesView: React.FC = () => {
         </div>
       </div>
 
+      <div id="branches-directory-content" className="space-y-4 printable-card">
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle="سجل الفروع والمستودعات ومراكز التكلفة"
+            documentSubtitle="Branches, Warehouses & Cost Centers Directory"
+            documentNumber={`ORG-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge="الهيكل التنظيمي"
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'الفروع', value: `${branches.length} فرع` },
+              { label: 'المستودعات', value: `${warehouses.length} مستودع` },
+              { label: 'مراكز التكلفة', value: `${costCenters.length} مركز` },
+            ]}
+          />
+        </div>
+
+        {/* Clean Tabular View for Print/PDF/Preview */}
+        <div className="hidden print:block space-y-5">
+          <div>
+            <h4 className="font-bold text-slate-900 text-sm mb-2">1. جدول فروع المنشأة ({branches.length})</h4>
+            <table className="w-full text-right text-xs border-collapse border border-slate-400">
+              <thead>
+                <tr className="bg-slate-200 text-slate-950 font-bold">
+                  <th className="py-2 px-3 border border-slate-300">كود الفرع</th>
+                  <th className="py-2 px-3 border border-slate-300">اسم الفرع</th>
+                  <th className="py-2 px-3 border border-slate-300">العنوان</th>
+                  <th className="py-2 px-3 border border-slate-300">الهاتف</th>
+                  <th className="py-2 px-3 border border-slate-300 text-center">المستودعات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branches.map((b) => (
+                  <tr key={b.id}>
+                    <td className="py-2 px-3 border border-slate-300 font-mono">{b.code}</td>
+                    <td className="py-2 px-3 border border-slate-300 font-bold">{b.nameAr} {b.isMain ? '(رئيسي)' : ''}</td>
+                    <td className="py-2 px-3 border border-slate-300">{b.address || '-'}</td>
+                    <td className="py-2 px-3 border border-slate-300 font-mono">{b.phone || '-'}</td>
+                    <td className="py-2 px-3 border border-slate-300 text-center font-mono">
+                      {warehouses.filter((w) => w.branchId === b.id).length}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-slate-900 text-sm mb-2">2. جدول المستودعات والمخازن ({warehouses.length})</h4>
+            <table className="w-full text-right text-xs border-collapse border border-slate-400">
+              <thead>
+                <tr className="bg-slate-200 text-slate-950 font-bold">
+                  <th className="py-2 px-3 border border-slate-300">كود المستودع</th>
+                  <th className="py-2 px-3 border border-slate-300">اسم المستودع</th>
+                  <th className="py-2 px-3 border border-slate-300">الموقع</th>
+                  <th className="py-2 px-3 border border-slate-300">الفرع التابع له</th>
+                </tr>
+              </thead>
+              <tbody>
+                {warehouses.map((w) => (
+                  <tr key={w.id}>
+                    <td className="py-2 px-3 border border-slate-300 font-mono">{w.code}</td>
+                    <td className="py-2 px-3 border border-slate-300 font-bold">{w.nameAr} {w.isMain ? '(رئيسي)' : ''}</td>
+                    <td className="py-2 px-3 border border-slate-300">{w.location || '-'}</td>
+                    <td className="py-2 px-3 border border-slate-300">
+                      {branches.find((b) => b.id === w.branchId)?.nameAr || '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-slate-900 text-sm mb-2">3. جدول مراكز التكلفة ({costCenters.length})</h4>
+            <table className="w-full text-right text-xs border-collapse border border-slate-400">
+              <thead>
+                <tr className="bg-slate-200 text-slate-950 font-bold">
+                  <th className="py-2 px-3 border border-slate-300">كود المركز</th>
+                  <th className="py-2 px-3 border border-slate-300">اسم مركز التكلفة</th>
+                  <th className="py-2 px-3 border border-slate-300">الوصف التشغيلي</th>
+                </tr>
+              </thead>
+              <tbody>
+                {costCenters.map((cc) => (
+                  <tr key={cc.id}>
+                    <td className="py-2 px-3 border border-slate-300 font-mono">{cc.code}</td>
+                    <td className="py-2 px-3 border border-slate-300 font-bold">{cc.nameAr}</td>
+                    <td className="py-2 px-3 border border-slate-300">{cc.description || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       {/* Tabs */}
-      <div className="flex border-b border-slate-800 space-x-reverse space-x-2">
+      <div className="flex border-b border-slate-800 space-x-reverse space-x-2 no-print">
         <button
           onClick={() => setActiveTab('BRANCHES')}
           className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
@@ -199,6 +305,7 @@ export const BranchesView: React.FC = () => {
       </div>
 
       {/* TAB 1: BRANCHES */}
+      <div className="no-print space-y-6">
       {activeTab === 'BRANCHES' && (
         branches.length === 0 ? (
           <div className="p-12 text-center rounded-3xl bg-slate-900/60 border border-slate-800 space-y-4">
@@ -368,11 +475,27 @@ export const BranchesView: React.FC = () => {
           ))}
         </div>
       )}
+      </div>
+
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`ORG-${new Date().getFullYear()}`}
+            signatureLabels={['مدير العمليات', 'المحاسب المالي', 'اعتماد الإدارة / الختم']}
+          />
+        </div>
+      </div>
 
       {/* MODAL: ADD BRANCH */}
-      {showAddBranch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4">
+      {showAddBranch && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y"
+          onClick={() => setShowAddBranch(false)}
+        >
+          <div
+            className="bg-slate-900 border border-emerald-500/40 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4 max-h-[90dvh] overflow-y-auto my-auto text-right"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="font-bold text-white text-base">إضافة فرع جديد للمنشأة</h3>
             <form onSubmit={handleSaveBranch} className="space-y-3">
               <div>
@@ -431,13 +554,21 @@ export const BranchesView: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: ADD WAREHOUSE */}
-      {showAddWh && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4">
+      {showAddWh && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y"
+          onClick={() => setShowAddWh(false)}
+        >
+          <div
+            className="bg-slate-900 border border-cyan-500/40 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4 max-h-[90dvh] overflow-y-auto my-auto text-right"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="font-bold text-white text-base">إضافة مستودع تخزيني جديد</h3>
             <form onSubmit={handleSaveWarehouse} className="space-y-3">
               <div>
@@ -501,13 +632,21 @@ export const BranchesView: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: ADD COST CENTER */}
-      {showAddCc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4">
+      {showAddCc && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y"
+          onClick={() => setShowAddCc(false)}
+        >
+          <div
+            className="bg-slate-900 border border-purple-500/40 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4 max-h-[90dvh] overflow-y-auto my-auto text-right"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="font-bold text-white text-base">إضافة مركز تكلفة جديد</h3>
             <form onSubmit={handleSaveCostCenter} className="space-y-3">
               <div>
@@ -557,7 +696,8 @@ export const BranchesView: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

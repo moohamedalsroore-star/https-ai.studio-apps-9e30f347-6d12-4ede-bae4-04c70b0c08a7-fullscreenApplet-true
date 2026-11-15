@@ -107,8 +107,8 @@ export const ProductQuickSearchModal: React.FC<ProductQuickSearchModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain">
+      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90dvh] my-auto overflow-hidden">
         {/* Header */}
         <div className="p-4 bg-slate-800/95 border-b border-slate-700 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">

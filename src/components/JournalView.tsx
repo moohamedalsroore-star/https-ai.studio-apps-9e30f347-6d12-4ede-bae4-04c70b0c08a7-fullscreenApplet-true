@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   BookOpen,
   Plus,
@@ -17,6 +17,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { JournalEntry, JournalSourceType } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout, UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 
 export const JournalView: React.FC = () => {
   const {
@@ -45,17 +46,21 @@ export const JournalView: React.FC = () => {
   ]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Filter journal entries
-  const filteredEntries = journalEntries.filter((e) => {
-    const matchesSearch =
-      e.entryNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      e.lines.some((l) => l.accountName.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Filter journal entries with useMemo for instant search
+  const filteredEntries = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return journalEntries.filter((e) => {
+      const matchesSearch =
+        !q ||
+        e.entryNumber.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q) ||
+        e.lines.some((l) => l.accountName.toLowerCase().includes(q));
 
-    const matchesSource = filterSource === 'ALL' || e.sourceType === filterSource;
+      const matchesSource = filterSource === 'ALL' || e.sourceType === filterSource;
 
-    return matchesSearch && matchesSource;
-  });
+      return matchesSearch && matchesSource;
+    });
+  }, [journalEntries, searchQuery, filterSource]);
 
   const totalDebits = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
   const totalCredits = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
@@ -216,13 +221,19 @@ export const JournalView: React.FC = () => {
       {/* Journal Entries Cards/Table */}
       <div id="journal-entries-table-content" className="space-y-4 printable-card">
         {/* Printable Journal Header */}
-        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
-          <h2 className="text-2xl font-black">{settings.companyName}</h2>
-          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
-          <h3 className="text-lg font-bold mt-2">دفتر قيود اليومية العامة المزدوجة المتوازنة (General Journal)</h3>
-          <div className="text-xs text-slate-600 font-mono-num mt-1">
-            التاريخ: {new Date().toISOString().split('T')[0]} | إجمالي القيود: {filteredEntries.length} قيد | العملة: {settings.baseCurrency}
-          </div>
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle="دفتر قيود اليومية العامة المزدوجة المتوازنة"
+            documentSubtitle="General Journal Ledger Register"
+            documentNumber={`JRN-REG-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge="دفتر اليومية"
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'إجمالي القيود', value: `${filteredEntries.length} قيد` },
+              { label: 'المصدر', value: filterSource === 'ALL' ? 'جميع المصادر' : filterSource },
+            ]}
+          />
         </div>
         {filteredEntries.map((entry) => (
           <div
@@ -247,7 +258,7 @@ export const JournalView: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setPreviewEntry(entry)}
-                  className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer no-print"
                   title="معاينة وطباعة سند القيد كملف PDF"
                 >
                   <Printer className="w-3.5 h-3.5 text-emerald-400" />
@@ -261,7 +272,7 @@ export const JournalView: React.FC = () => {
                       onConfirm: () => deleteJournalEntry(entry.id),
                     });
                   }}
-                  className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer no-print"
                   title="حذف القيد اليومي"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -315,12 +326,19 @@ export const JournalView: React.FC = () => {
             </div>
           </div>
         ))}
+
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`JRN-REG-${new Date().getFullYear()}`}
+            signatureLabels={['إعداد المحاسب', 'المراجع المالي', 'اعتماد المدير العام / الختم']}
+          />
+        </div>
       </div>
 
       {/* MODAL: Add Manual Adjusting Journal Entry */}
       {showManualModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-y-auto max-h-[90dvh] my-auto">
             <div className="p-4 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-emerald-400" />
@@ -538,8 +556,8 @@ export const JournalView: React.FC = () => {
 
       {/* JOURNAL ENTRY VOUCHER PREVIEW MODAL */}
       {previewEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <span className="font-bold text-sm">سند قيد اليومية: {previewEntry.entryNumber}</span>
               <div className="flex items-center gap-2">
@@ -558,72 +576,62 @@ export const JournalView: React.FC = () => {
               </div>
             </div>
 
-            <div id="journal-print-content" className="p-8 text-right printable-card text-xs space-y-4">
-              <div className="text-center border-b-2 border-slate-900 pb-3">
-                <h3 className="text-lg font-black">{settings.companyName}</h3>
-                <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-                <div className="font-bold text-base text-slate-900 mt-2">
-                  سند قيد يومية عام (Journal Voucher)
+            <div id="journal-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle="سند قيد يومية عام"
+                documentSubtitle="General Journal Voucher"
+                documentNumber={previewEntry.entryNumber}
+                documentDate={previewEntry.date}
+                documentTypeBadge={previewEntry.sourceType === 'MANUAL' ? 'قيد يدوي' : 'قيد آلي معتمد'}
+                currency={settings.baseCurrency}
+                grandTotal={previewEntry.totalDebit}
+                notes={previewEntry.description}
+                referenceNumber={previewEntry.sourceId}
+              >
+                <div className="overflow-x-auto my-3">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-slate-900 bg-slate-200 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400 w-28">كود الحساب</th>
+                        <th className="py-2 px-2 border border-slate-400">اسم الحساب المالي</th>
+                        <th className="py-2 px-2 border border-slate-400">البيان / الشرح</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-28">مدين ({settings.baseCurrency})</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-28">دائن ({settings.baseCurrency})</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewEntry.lines.map((l, idx) => (
+                        <tr key={l.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-mono font-bold text-slate-900">{l.accountCode}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-bold text-slate-950">{l.accountName}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-slate-600">{l.memo || previewEntry.description}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-emerald-800">
+                            {l.debit > 0 ? l.debit.toFixed(2) : '-'}
+                          </td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-cyan-800">
+                            {l.credit > 0 ? l.credit.toFixed(2) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-900 font-mono font-black bg-slate-100 text-slate-950">
+                        <td colSpan={4} className="py-2 px-2 border border-slate-300 font-sans font-black text-slate-900">
+                          الإجمالي المتوازن (Debit = Credit):
+                        </td>
+                        <td className="py-2 px-2 border border-slate-300 text-center text-emerald-900 bg-emerald-50 font-black">
+                          {previewEntry.totalDebit.toFixed(2)}
+                        </td>
+                        <td className="py-2 px-2 border border-slate-300 text-center text-cyan-900 bg-cyan-50 font-black">
+                          {previewEntry.totalCredit.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-                <div className="text-xs text-slate-600 font-mono-num mt-1">
-                  رقم القيد: {previewEntry.entryNumber} | التاريخ: {previewEntry.date}
-                </div>
-              </div>
-
-              <div className="bg-slate-100 p-3 rounded-xl">
-                <div><span className="font-bold">البيان العام:</span> {previewEntry.description}</div>
-              </div>
-
-              <table className="w-full text-right border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-900 bg-slate-200">
-                    <th className="py-2 px-2">كود الحساب</th>
-                    <th className="py-2 px-2">اسم الحساب</th>
-                    <th className="py-2 px-2">البيان / الشرح</th>
-                    <th className="py-2 px-2 text-center">مدين ({settings.baseCurrency})</th>
-                    <th className="py-2 px-2 text-center">دائن ({settings.baseCurrency})</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300">
-                  {previewEntry.lines.map((l) => (
-                    <tr key={l.id}>
-                      <td className="py-2 px-2 font-mono-num font-bold">{l.accountCode}</td>
-                      <td className="py-2 px-2 font-bold">{l.accountName}</td>
-                      <td className="py-2 px-2 text-slate-600">{l.memo || '-'}</td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">
-                        {l.debit > 0 ? l.debit.toFixed(2) : '-'}
-                      </td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">
-                        {l.credit > 0 ? l.credit.toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-900 font-mono-num font-extrabold bg-slate-100">
-                    <td colSpan={3} className="py-2 px-2 font-sans font-bold text-slate-800">
-                      الإجمالي المتوازن:
-                    </td>
-                    <td className="py-2 px-2 text-center text-emerald-700">
-                      {previewEntry.totalDebit.toFixed(2)}
-                    </td>
-                    <td className="py-2 px-2 text-center text-cyan-700">
-                      {previewEntry.totalCredit.toFixed(2)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-
-              <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-                <span className="font-bold">المبلغ كتابة:</span>{' '}
-                {tafqeet(previewEntry.totalDebit, settings.baseCurrency, 'هللة')}
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[11px] text-slate-700">
-                <div className="border-t border-slate-300 pt-2 font-bold">المحاسب المعد</div>
-                <div className="border-t border-slate-300 pt-2 font-bold">المراجع المالي</div>
-                <div className="border-t border-slate-300 pt-2 font-bold">المدير العام / الاعتماد</div>
-              </div>
+              </UnifiedDocumentLayout>
             </div>
           </div>
         </div>

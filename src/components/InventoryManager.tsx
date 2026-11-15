@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Package,
   AlertTriangle,
@@ -33,6 +33,7 @@ import { Product, ProductUnit, ProductComponent } from '../types/accounting';
 import { FreeNumberInput } from './FreeNumberInput';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 import { exportProductsToExcel, exportStockMovementsToExcel } from '../utils/excelExport';
 import { ProductQuickSearchModal } from './ProductQuickSearchModal';
 
@@ -59,7 +60,16 @@ export const InventoryManager: React.FC = () => {
     showToast,
   } = useAccounting();
 
-  const [activeTab, setActiveTab] = useState<'items' | 'alerts' | 'movements' | 'adjustments'>('items');
+  const [activeTab, setActiveTab] = useState<'items' | 'alerts' | 'movements' | 'adjustments'>(() => {
+    try {
+      const saved = sessionStorage.getItem('alghafari_inventory_tab');
+      if (saved && ['items', 'alerts', 'movements', 'adjustments'].includes(saved)) {
+        sessionStorage.removeItem('alghafari_inventory_tab');
+        return saved as 'items' | 'alerts' | 'movements' | 'adjustments';
+      }
+    } catch {}
+    return 'items';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'IN_STOCK' | 'LOW' | 'OUT' | 'GTE' | 'LTE'>('ALL');
@@ -132,40 +142,58 @@ export const InventoryManager: React.FC = () => {
     reason: 'جرد دوري للمستودع وتصحيح الفروقات',
   });
 
-  const categories = ['ALL', ...Array.from(new Set(products.map((p) => p.category)))];
+  const categories = useMemo(
+    () => ['ALL', ...Array.from(new Set(products.map((p) => p.category)))],
+    [products]
+  );
 
-  // Advanced Filter products (Onyx Pro)
-  const filteredProducts = products.filter((p) => {
+  // Advanced Filter products (Onyx Pro) - with useMemo for lightning-fast search
+  const filteredProducts = useMemo(() => {
     const term = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      !term ||
-      p.nameAr.toLowerCase().includes(term) ||
-      p.code.toLowerCase().includes(term) ||
-      p.barcode.toLowerCase().includes(term) ||
-      (p.category && p.category.toLowerCase().includes(term));
+    return products.filter((p) => {
+      const matchesSearch =
+        !term ||
+        p.nameAr.toLowerCase().includes(term) ||
+        p.code.toLowerCase().includes(term) ||
+        p.barcode.toLowerCase().includes(term) ||
+        (p.category && p.category.toLowerCase().includes(term));
 
-    const matchesCategory = filterCategory === 'ALL' || p.category === filterCategory;
+      const matchesCategory = filterCategory === 'ALL' || p.category === filterCategory;
 
-    let matchesStatus = true;
-    if (filterStatus === 'OUT') matchesStatus = p.stockQty <= 0;
-    else if (filterStatus === 'LOW') matchesStatus = p.stockQty > 0 && p.stockQty <= p.minStockAlert;
-    else if (filterStatus === 'IN_STOCK') matchesStatus = p.stockQty > p.minStockAlert;
-    else if (filterStatus === 'GTE') matchesStatus = p.stockQty >= filterQtyThreshold;
-    else if (filterStatus === 'LTE') matchesStatus = p.stockQty <= filterQtyThreshold;
+      let matchesStatus = true;
+      if (filterStatus === 'OUT') matchesStatus = p.stockQty <= 0;
+      else if (filterStatus === 'LOW') matchesStatus = p.stockQty > 0 && p.stockQty <= p.minStockAlert;
+      else if (filterStatus === 'IN_STOCK') matchesStatus = p.stockQty > p.minStockAlert;
+      else if (filterStatus === 'GTE') matchesStatus = p.stockQty >= filterQtyThreshold;
+      else if (filterStatus === 'LTE') matchesStatus = p.stockQty <= filterQtyThreshold;
 
-    let matchesWarehouse = true;
-    if (filterWarehouse !== 'ALL') {
-      const whQty = p.warehouseStocks?.[filterWarehouse] ?? 0;
-      matchesWarehouse = whQty > 0;
+      let matchesWarehouse = true;
+      if (filterWarehouse !== 'ALL') {
+        const whQty = p.warehouseStocks?.[filterWarehouse] ?? 0;
+        matchesWarehouse = whQty > 0;
+      }
+
+      return matchesSearch && matchesCategory && matchesStatus && matchesWarehouse;
+    });
+  }, [products, searchQuery, filterCategory, filterStatus, filterQtyThreshold, filterWarehouse]);
+
+  // Single-pass Filtered Summary Metrics for Header/Bar
+  const { filteredTotalUnits, filteredTotalCost, filteredTotalSalesVal } = useMemo(() => {
+    let units = 0;
+    let cost = 0;
+    let sales = 0;
+    for (let i = 0; i < filteredProducts.length; i++) {
+      const p = filteredProducts[i];
+      units += p.stockQty;
+      cost += p.stockQty * p.costPrice;
+      sales += p.stockQty * p.salePrice;
     }
-
-    return matchesSearch && matchesCategory && matchesStatus && matchesWarehouse;
-  });
-
-  // Filtered Summary Metrics for Header/Bar
-  const filteredTotalUnits = filteredProducts.reduce((sum, p) => sum + p.stockQty, 0);
-  const filteredTotalCost = filteredProducts.reduce((sum, p) => sum + (p.stockQty * p.costPrice), 0);
-  const filteredTotalSalesVal = filteredProducts.reduce((sum, p) => sum + (p.stockQty * p.salePrice), 0);
+    return {
+      filteredTotalUnits: units,
+      filteredTotalCost: cost,
+      filteredTotalSalesVal: sales,
+    };
+  }, [filteredProducts]);
 
   const handleOpenAddModal = () => {
     setEditingProduct(null);
@@ -359,13 +387,19 @@ export const InventoryManager: React.FC = () => {
 
       <div id="inventory-report-content" className="space-y-6 printable-card">
         {/* Printable Inventory Valuation Header */}
-        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
-          <h2 className="text-2xl font-black">{settings.companyName}</h2>
-          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber} | س.ت: {settings.commercialRecord}</div>
-          <h3 className="text-lg font-bold mt-2">تقرير تقييم المخزون وبضاعة آخر المدة وتكلفة المبيعات (COGS)</h3>
-          <div className="text-xs text-slate-600 font-mono-num mt-1">
-            التاريخ: {new Date().toISOString().split('T')[0]} | عدد الأصناف: {products.length} صنف | العملة: {settings.baseCurrency}
-          </div>
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle="تقرير تقييم المخزون وبضاعة آخر المدة وتكلفة المبيعات"
+            documentSubtitle="Inventory Valuation & COGS Schedule"
+            documentNumber={`INV-VAL-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge="جرد وتقييم مخزون"
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'عدد الأصناف', value: `${products.length} صنف` },
+              { label: 'تكلفة المخزون', value: `${inventorySummary.totalCostValue.toFixed(2)} ${settings.baseCurrency}` },
+            ]}
+          />
         </div>
 
       {/* 4 Inventory & COGS KPI Cards */}
@@ -649,7 +683,7 @@ export const InventoryManager: React.FC = () => {
                   <th className="py-3 px-4 text-center">الرصيد الفعلي</th>
                   <th className="py-3 px-4 text-center">حالة المخزون</th>
                   <th className="py-3 px-4 text-center">إجمالي القيمة</th>
-                  <th className="py-3 px-4 text-center">الإجراءات</th>
+                  <th className="py-3 px-4 text-center no-print">الإجراءات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
@@ -742,7 +776,7 @@ export const InventoryManager: React.FC = () => {
                         {totalValuation.toLocaleString('en-US', { minimumFractionDigits: 2 })}{' '}
                         <span className="text-[10px] text-slate-400">{settings.baseCurrency}</span>
                       </td>
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-3.5 px-4 text-center no-print">
                         <div className="flex items-center justify-center gap-1.5">
                           {p.isComposite && (
                             <button
@@ -1091,12 +1125,19 @@ export const InventoryManager: React.FC = () => {
           )}
         </div>
       )}
+
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`INV-VAL-${new Date().getFullYear()}`}
+            signatureLabels={['أمين المستودع', 'مراقب المخزون', 'اعتماد الإدارة / الختم']}
+          />
+        </div>
       </div>
 
       {/* MODAL 1: Add / Edit Product */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90dvh] my-auto overscroll-contain overflow-hidden">
             <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Package className="w-5 h-5 text-emerald-400" />
@@ -1121,7 +1162,7 @@ export const InventoryManager: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
+            <form onSubmit={handleSaveProduct} className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 pb-6 touch-pan-y">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">كود الصنف</label>
@@ -1521,8 +1562,8 @@ export const InventoryManager: React.FC = () => {
 
       {/* MODAL 2: Stock Adjustment (تسوية جردية مع قيد آلي) */}
       {adjustingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[90dvh] my-auto">
             <div className="p-4 bg-purple-950/40 border-b border-purple-500/30 flex items-center justify-between">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <ClipboardCheck className="w-5 h-5 text-purple-400" />
@@ -1627,8 +1668,8 @@ export const InventoryManager: React.FC = () => {
 
       {/* MODAL: BOM Assembly / Disassembly (تجميع وتفكيك الأصناف المركبة) */}
       {assemblyProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-purple-500/40 rounded-2xl w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90dvh] my-auto">
             <div className="p-4 bg-purple-950/50 border-b border-purple-500/30 flex items-center justify-between">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Boxes className="w-5 h-5 text-purple-400" />
@@ -1797,8 +1838,8 @@ export const InventoryManager: React.FC = () => {
         };
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden max-h-[94vh] flex flex-col">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain">
+            <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-5xl shadow-2xl overflow-hidden max-h-[92dvh] my-auto flex flex-col">
               {/* Header */}
               <div className="p-4 bg-slate-800/95 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3 shrink-0">
                 <div className="flex items-center gap-3">
@@ -1943,13 +1984,22 @@ export const InventoryManager: React.FC = () => {
 
               {/* Printable Body Content */}
               <div id="product-card-print-area" className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-                {/* Printable Header Info */}
-                <div className="hidden print:block text-center border-b pb-3 mb-3 text-black">
-                  <h2 className="text-xl font-bold">{settings.companyName}</h2>
-                  <h3 className="text-base font-bold mt-1">كارت حركة الصنف: {selectedProductCard.nameAr} ({selectedProductCard.code})</h3>
-                  <div className="text-xs text-slate-600 font-mono-num mt-1">
-                    الوحدة: {selectedProductCard.unit} | التكلفة: {selectedProductCard.costPrice.toFixed(2)} | البيع: {selectedProductCard.salePrice.toFixed(2)}
-                  </div>
+                {/* Onyx Pro Unified Item Card Header */}
+                <div className="hidden print:block mb-4">
+                  <UnifiedDocumentHeader
+                    documentTitle={`كارت حركة الصنف: ${selectedProductCard.nameAr}`}
+                    documentSubtitle="Detailed Item Movement & Stock Card"
+                    documentNumber={selectedProductCard.code}
+                    documentDate={new Date().toISOString().split('T')[0]}
+                    documentTypeBadge="كارت صنف مخزني"
+                    currency={settings.baseCurrency}
+                    customMeta={[
+                      { label: 'كود الصنف', value: selectedProductCard.code },
+                      { label: 'الرصيد الحالي', value: `${selectedProductCard.stockQty} ${selectedProductCard.unit}` },
+                      { label: 'الوحدة الأساسية', value: selectedProductCard.unit },
+                      { label: 'سعر التكلفة', value: `${selectedProductCard.costPrice.toFixed(2)} ${settings.baseCurrency}` },
+                    ]}
+                  />
                 </div>
 
                 {/* Stock Balances & Status Strip */}
@@ -2148,6 +2198,14 @@ export const InventoryManager: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+                </div>
+
+                {/* Print Footer with Printed By User and Signatures */}
+                <div className="hidden print:block mt-6">
+                  <UnifiedDocumentFooter
+                    documentNumber={selectedProductCard.code}
+                    signatureLabels={['أمين المستودع', 'مسؤول مراقبة المخزون', 'اعتماد الإدارة / الختم']}
+                  />
                 </div>
               </div>
             </div>

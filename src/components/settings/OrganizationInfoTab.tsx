@@ -41,7 +41,7 @@ export const OrganizationInfoTab: React.FC<OrganizationInfoTabProps> = ({
     taxEnabled: settings.taxEnabled !== false,
     defaultTaxRate: settings.defaultTaxRate,
     decimalPlaces: settings.decimalPlaces ?? 2,
-    logoUrl: settings.logoUrl || '/assets/aistudio/1787182612810_5ba9faf5.png',
+    logoUrl: settings.logoUrl || '/assets/aistudio/logo_3d_transparent.png',
   });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -129,7 +129,7 @@ export const OrganizationInfoTab: React.FC<OrganizationInfoTabProps> = ({
             </label>
             <button
               type="button"
-              onClick={() => setForm({ ...form, logoUrl: '/assets/aistudio/1787182612810_5ba9faf5.png' })}
+              onClick={() => setForm({ ...form, logoUrl: '/assets/aistudio/logo_3d_transparent.png' })}
               className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-bold transition-colors cursor-pointer"
             >
               استعادة الشعار الأصلي
@@ -348,7 +348,7 @@ export const OrganizationInfoTab: React.FC<OrganizationInfoTabProps> = ({
               taxEnabled: settings.taxEnabled !== false,
               defaultTaxRate: settings.defaultTaxRate,
               decimalPlaces: settings.decimalPlaces ?? 2,
-              logoUrl: settings.logoUrl || '/assets/aistudio/1787182612810_5ba9faf5.png',
+              logoUrl: settings.logoUrl || '/assets/aistudio/logo_3d_transparent.png',
             });
             showToast('تم إلغاء التعديلات واستعادة القيم المحفوظة', 'info');
           }}

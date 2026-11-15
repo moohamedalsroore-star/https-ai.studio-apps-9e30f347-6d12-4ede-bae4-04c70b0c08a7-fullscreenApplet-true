@@ -1,33 +1,5 @@
 import React from 'react';
 
-/**
- * Official Google Play Store Badge Icon
- */
-export const PlayStoreIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
-  <svg
-    className={`${className} inline-block shrink-0 align-middle drop-shadow-sm`}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path
-      d="M3.6 1.7C3.3 2 3.1 2.5 3.1 3.1V20.9C3.1 21.5 3.3 22 3.6 22.3L3.7 22.4L13.8 12.3V12V11.7L3.7 1.6L3.6 1.7Z"
-      fill="#00D3FF"
-    />
-    <path
-      d="M17.2 15.7L13.8 12.3V12V11.7L17.2 8.3L17.3 8.4L21.3 10.7C22.4 11.3 22.4 12.7 21.3 13.3L17.3 15.6L17.2 15.7Z"
-      fill="#FFD400"
-    />
-    <path
-      d="M17.3 15.6L13.8 12.1L3.6 22.3C4 22.7 4.6 22.7 5.4 22.3L17.3 15.6Z"
-      fill="#FF334B"
-    />
-    <path
-      d="M17.3 8.4L5.4 1.7C4.6 1.3 4 1.3 3.6 1.7L13.8 11.9L17.3 8.4Z"
-      fill="#00E676"
-    />
-  </svg>
-);
 
 /**
  * Official WhatsApp Icon

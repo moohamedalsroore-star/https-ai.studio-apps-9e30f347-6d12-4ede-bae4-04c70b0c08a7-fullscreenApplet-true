@@ -1,0 +1,842 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 0. Global Safety Net (Default Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== PHASE 3: GLOBAL PRIMITIVES ====================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'moohamedalsroore@gmail.com'
+      );
+    }
+
+    // String & list validation helpers
+    function isStr(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isOptStr(data, field, maxLen) {
+      return !(field in data) || data[field] == null || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptNum(data, field) {
+      return !(field in data) || data[field] == null || data[field] is number;
+    }
+
+    function isOptBool(data, field) {
+      return !(field in data) || data[field] == null || data[field] is bool;
+    }
+
+    function isBoundedList(val, maxLen) {
+      return val is list && val.size() <= maxLen && (val.size() == 0 || val[0] is map);
+    }
+
+    // Master Gate Workspace relational checks (used ONLY on single-doc operations, NEVER inside allow list)
+    function workspaceExists(workspaceId) {
+      return exists(/databases/$(database)/documents/workspaces/$(workspaceId));
+    }
+
+    function workspaceData(workspaceId) {
+      return get(/databases/$(database)/documents/workspaces/$(workspaceId)).data;
+    }
+
+    function isActiveWorkspaceOwner(workspaceId) {
+      return isOwner(workspaceId) &&
+        workspaceExists(workspaceId) &&
+        workspaceData(workspaceId).ownerId == request.auth.uid &&
+        workspaceData(workspaceId).status == 'ACTIVE';
+    }
+
+    function isWorkspaceAuditAuthorized(workspaceId) {
+      return workspaceExists(workspaceId) &&
+        workspaceData(workspaceId).adminAuditAuthorized == true;
+    }
+
+    // ==================== VALIDATION BLUEPRINTS ====================
+
+    function isValidAdminMarker(data, adminId) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.uid == adminId &&
+        isStr(data.email, 3, 200) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'tenantCode', 'displayName', 'email', 'role', 'status', 'accountingAccessGranted', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'tenantCode', 'displayName', 'email', 'photoURL', 'companyName', 'role', 'status', 'accountingAccessGranted', 'createdAt', 'updatedAt', 'lastLoginAt']) &&
+        isValidId(data.uid) &&
+        data.uid == userId &&
+        isStr(data.tenantCode, 2, 32) &&
+        isStr(data.displayName, 1, 150) &&
+        isStr(data.email, 3, 200) &&
+        isOptStr(data, 'photoURL', 500) &&
+        isOptStr(data, 'companyName', 200) &&
+        data.role in ['USER', 'ADMIN'] &&
+        data.status in ['ACTIVE', 'SUSPENDED'] &&
+        data.accountingAccessGranted is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        (!('lastLoginAt' in data) || data.lastLoginAt is timestamp);
+    }
+
+    function isValidWorkspace(data, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'tenantCode', 'companyName', 'status', 'adminAuditAuthorized', 'settings', 'currencies', 'branches', 'warehouses', 'costCenters', 'staffUsers', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'tenantCode', 'companyName', 'status', 'adminAuditAuthorized', 'settings', 'currencies', 'branches', 'warehouses', 'costCenters', 'staffUsers', 'currentStaffUserId', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) &&
+        data.id == workspaceId &&
+        isValidId(data.ownerId) &&
+        data.ownerId == workspaceId &&
+        isStr(data.tenantCode, 2, 32) &&
+        isStr(data.companyName, 1, 200) &&
+        data.status in ['ACTIVE', 'SUSPENDED'] &&
+        data.adminAuditAuthorized is bool &&
+        data.settings is map &&
+        isBoundedList(data.currencies, 50) &&
+        isBoundedList(data.branches, 50) &&
+        isBoundedList(data.warehouses, 50) &&
+        isBoundedList(data.costCenters, 50) &&
+        isBoundedList(data.staffUsers, 50) &&
+        isOptStr(data, 'currentStaffUserId', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAccount(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'code', 'nameAr', 'nameEn', 'category', 'level', 'balance', 'currency', 'isDebitNormal', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'code', 'nameAr', 'nameEn', 'category', 'parentCode', 'level', 'balance', 'currency', 'isDebitNormal', 'isSystemAccount', 'description', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.code, 1, 40) &&
+        isStr(data.nameAr, 1, 200) &&
+        isStr(data.nameEn, 0, 200) &&
+        data.category in ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'] &&
+        isOptStr(data, 'parentCode', 40) &&
+        data.level is number &&
+        data.balance is number &&
+        isStr(data.currency, 1, 12) &&
+        data.isDebitNormal is bool &&
+        isOptBool(data, 'isSystemAccount') &&
+        isOptStr(data, 'description', 500) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidProduct(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'code', 'nameAr', 'category', 'unit', 'costPrice', 'salePrice', 'stockQty', 'minStockAlert', 'taxRate', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'code', 'barcode', 'nameAr', 'category', 'unit', 'costPrice', 'salePrice', 'wholesalePrice', 'specialPrice', 'stockQty', 'reservedQty', 'minStockAlert', 'taxRate', 'units', 'isComposite', 'components', 'warehouseStocks', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.code, 0, 64) &&
+        isOptStr(data, 'barcode', 128) &&
+        isStr(data.nameAr, 1, 250) &&
+        isStr(data.category, 0, 100) &&
+        isStr(data.unit, 0, 50) &&
+        data.costPrice is number &&
+        data.salePrice is number &&
+        isOptNum(data, 'wholesalePrice') &&
+        isOptNum(data, 'specialPrice') &&
+        data.stockQty is number &&
+        isOptNum(data, 'reservedQty') &&
+        data.minStockAlert is number &&
+        data.taxRate is number &&
+        (!('units' in data) || data.units == null || isBoundedList(data.units, 30)) &&
+        isOptBool(data, 'isComposite') &&
+        (!('components' in data) || data.components == null || isBoundedList(data.components, 50)) &&
+        (!('warehouseStocks' in data) || data.warehouseStocks == null || data.warehouseStocks is map) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidContact(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'code', 'name', 'type', 'accountId', 'balance', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'code', 'name', 'type', 'phone', 'email', 'taxNumber', 'address', 'accountId', 'balance', 'creditLimit', 'preferredCurrency', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.code, 0, 64) &&
+        isStr(data.name, 1, 200) &&
+        data.type in ['CUSTOMER', 'SUPPLIER'] &&
+        isOptStr(data, 'phone', 50) &&
+        isOptStr(data, 'email', 150) &&
+        isOptStr(data, 'taxNumber', 60) &&
+        isOptStr(data, 'address', 300) &&
+        isStr(data.accountId, 1, 128) &&
+        data.balance is number &&
+        isOptNum(data, 'creditLimit') &&
+        isOptStr(data, 'preferredCurrency', 12) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidInvoice(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'invoiceNumber', 'type', 'date', 'partyName', 'items', 'subtotal', 'taxTotal', 'grandTotal', 'paymentMethod', 'paidAmount', 'remainingAmount', 'status', 'currency', 'exchangeRate', 'grandTotalBase', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'invoiceNumber', 'type', 'date', 'dueDate', 'branchId', 'partyId', 'partyName', 'items', 'subtotal', 'discountTotal', 'invoiceDiscount', 'taxTotal', 'grandTotal', 'paymentMethod', 'paidAmount', 'remainingAmount', 'cashAccountId', 'notes', 'status', 'workflowStatus', 'journalEntryId', 'currency', 'exchangeRate', 'grandTotalBase', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.invoiceNumber, 1, 80) &&
+        data.type in ['SALES', 'PURCHASE'] &&
+        isStr(data.date, 4, 32) &&
+        isOptStr(data, 'dueDate', 32) &&
+        isOptStr(data, 'branchId', 128) &&
+        isOptStr(data, 'partyId', 128) &&
+        isStr(data.partyName, 0, 200) &&
+        isBoundedList(data.items, 250) &&
+        data.subtotal is number &&
+        isOptNum(data, 'discountTotal') &&
+        isOptNum(data, 'invoiceDiscount') &&
+        data.taxTotal is number &&
+        data.grandTotal is number &&
+        data.paymentMethod in ['CASH', 'CREDIT', 'BANK', 'SPLIT'] &&
+        data.paidAmount is number &&
+        data.remainingAmount is number &&
+        isOptStr(data, 'cashAccountId', 128) &&
+        isOptStr(data, 'notes', 1000) &&
+        data.status in ['PAID', 'PARTIAL', 'UNPAID'] &&
+        (!('workflowStatus' in data) || data.workflowStatus == null || data.workflowStatus in ['DRAFT', 'APPROVED', 'POSTED', 'VOID']) &&
+        isOptStr(data, 'journalEntryId', 128) &&
+        isStr(data.currency, 1, 12) &&
+        data.exchangeRate is number &&
+        data.grandTotalBase is number &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidQuotation(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'quoteNumber', 'date', 'partyName', 'items', 'grandTotal', 'status', 'currency', 'exchangeRate', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'quoteNumber', 'date', 'validUntil', 'branchId', 'partyId', 'partyName', 'items', 'subtotal', 'taxTotal', 'grandTotal', 'notes', 'status', 'convertedInvoiceId', 'currency', 'exchangeRate', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.quoteNumber, 1, 80) &&
+        isStr(data.date, 4, 32) &&
+        isOptStr(data, 'validUntil', 32) &&
+        isOptStr(data, 'branchId', 128) &&
+        isOptStr(data, 'partyId', 128) &&
+        isStr(data.partyName, 0, 200) &&
+        isBoundedList(data.items, 250) &&
+        isOptNum(data, 'subtotal') &&
+        isOptNum(data, 'taxTotal') &&
+        data.grandTotal is number &&
+        isOptStr(data, 'notes', 1000) &&
+        data.status in ['DRAFT', 'SENT', 'ACCEPTED', 'CONVERTED', 'CANCELLED'] &&
+        isOptStr(data, 'convertedInvoiceId', 128) &&
+        isStr(data.currency, 1, 12) &&
+        data.exchangeRate is number &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidReturnInvoice(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'returnNumber', 'type', 'date', 'partyName', 'items', 'grandTotal', 'paymentMethod', 'reason', 'currency', 'exchangeRate', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'returnNumber', 'type', 'originalInvoiceNumber', 'date', 'branchId', 'partyId', 'partyName', 'items', 'subtotal', 'taxTotal', 'grandTotal', 'paymentMethod', 'reason', 'journalEntryId', 'currency', 'exchangeRate', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.returnNumber, 1, 80) &&
+        data.type in ['SALES_RETURN', 'PURCHASE_RETURN'] &&
+        isOptStr(data, 'originalInvoiceNumber', 80) &&
+        isStr(data.date, 4, 32) &&
+        isOptStr(data, 'branchId', 128) &&
+        isOptStr(data, 'partyId', 128) &&
+        isStr(data.partyName, 0, 200) &&
+        isBoundedList(data.items, 250) &&
+        isOptNum(data, 'subtotal') &&
+        isOptNum(data, 'taxTotal') &&
+        data.grandTotal is number &&
+        data.paymentMethod in ['CASH', 'CREDIT', 'BANK', 'SPLIT'] &&
+        isStr(data.reason, 0, 500) &&
+        isOptStr(data, 'journalEntryId', 128) &&
+        isStr(data.currency, 1, 12) &&
+        data.exchangeRate is number &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidVoucher(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'voucherNumber', 'type', 'date', 'accountId', 'accountName', 'partyAccountId', 'partyAccountName', 'amount', 'paymentMethod', 'description', 'currency', 'exchangeRate', 'amountBase', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'voucherNumber', 'type', 'date', 'branchId', 'accountId', 'accountName', 'partyAccountId', 'partyAccountName', 'toAccountId', 'toAccountName', 'amount', 'paymentMethod', 'referenceNumber', 'description', 'currency', 'exchangeRate', 'amountBase', 'journalEntryId', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.voucherNumber, 1, 80) &&
+        data.type in ['RECEIPT', 'PAYMENT', 'TRANSFER'] &&
+        isStr(data.date, 4, 32) &&
+        isOptStr(data, 'branchId', 128) &&
+        isStr(data.accountId, 1, 128) &&
+        isStr(data.accountName, 0, 200) &&
+        isStr(data.partyAccountId, 1, 128) &&
+        isStr(data.partyAccountName, 0, 200) &&
+        isOptStr(data, 'toAccountId', 128) &&
+        isOptStr(data, 'toAccountName', 200) &&
+        data.amount is number &&
+        data.paymentMethod in ['CASH', 'CREDIT', 'BANK', 'SPLIT'] &&
+        isOptStr(data, 'referenceNumber', 128) &&
+        isStr(data.description, 0, 500) &&
+        isStr(data.currency, 1, 12) &&
+        data.exchangeRate is number &&
+        data.amountBase is number &&
+        isOptStr(data, 'journalEntryId', 128) &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidJournalEntry(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'entryNumber', 'date', 'description', 'sourceType', 'lines', 'totalDebit', 'totalCredit', 'isBalanced', 'isPosted', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'entryNumber', 'date', 'description', 'sourceType', 'sourceId', 'lines', 'totalDebit', 'totalCredit', 'isBalanced', 'isPosted', 'branchId', 'currency', 'exchangeRate', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.entryNumber, 1, 80) &&
+        isStr(data.date, 4, 32) &&
+        isStr(data.description, 0, 500) &&
+        isStr(data.sourceType, 1, 50) &&
+        isOptStr(data, 'sourceId', 128) &&
+        isBoundedList(data.lines, 150) &&
+        data.totalDebit is number &&
+        data.totalCredit is number &&
+        data.isBalanced is bool &&
+        data.isPosted is bool &&
+        isOptStr(data, 'branchId', 128) &&
+        isOptStr(data, 'currency', 12) &&
+        isOptNum(data, 'exchangeRate') &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStockMovement(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'productId', 'productName', 'type', 'referenceNumber', 'date', 'quantityChange', 'unitCost', 'totalCost', 'balanceAfter', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'productId', 'productName', 'type', 'referenceNumber', 'date', 'quantityChange', 'unitCost', 'totalCost', 'balanceAfter', 'notes', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.productId, 1, 128) &&
+        isStr(data.productName, 0, 250) &&
+        isStr(data.type, 1, 50) &&
+        isStr(data.referenceNumber, 0, 80) &&
+        isStr(data.date, 4, 32) &&
+        data.quantityChange is number &&
+        data.unitCost is number &&
+        data.totalCost is number &&
+        data.balanceAfter is number &&
+        isOptStr(data, 'notes', 500) &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStockAdjustment(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'adjustmentNumber', 'date', 'productId', 'productName', 'systemQty', 'actualQty', 'differenceQty', 'unitCost', 'totalDifferenceCost', 'reason', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'adjustmentNumber', 'date', 'productId', 'productName', 'systemQty', 'actualQty', 'differenceQty', 'unitCost', 'totalDifferenceCost', 'reason', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.adjustmentNumber, 1, 80) &&
+        isStr(data.date, 4, 32) &&
+        isStr(data.productId, 1, 128) &&
+        isStr(data.productName, 0, 250) &&
+        data.systemQty is number &&
+        data.actualQty is number &&
+        data.differenceQty is number &&
+        data.unitCost is number &&
+        data.totalDifferenceCost is number &&
+        isStr(data.reason, 0, 500) &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStockTransfer(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'transferNumber', 'date', 'fromWarehouseId', 'toWarehouseId', 'items', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'transferNumber', 'date', 'fromBranchId', 'toBranchId', 'fromWarehouseId', 'toWarehouseId', 'items', 'notes', 'status', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.transferNumber, 1, 80) &&
+        isStr(data.date, 4, 32) &&
+        isOptStr(data, 'fromBranchId', 128) &&
+        isOptStr(data, 'toBranchId', 128) &&
+        isStr(data.fromWarehouseId, 1, 128) &&
+        isStr(data.toWarehouseId, 1, 128) &&
+        isBoundedList(data.items, 200) &&
+        isOptStr(data, 'notes', 500) &&
+        data.status in ['COMPLETED'] &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStockReceiptNote(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'receiptNumber', 'type', 'date', 'warehouseId', 'reason', 'items', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'receiptNumber', 'type', 'date', 'branchId', 'warehouseId', 'reason', 'items', 'notes', 'journalEntryId', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.receiptNumber, 1, 80) &&
+        data.type in ['IN', 'OUT'] &&
+        isStr(data.date, 4, 32) &&
+        isOptStr(data, 'branchId', 128) &&
+        isStr(data.warehouseId, 1, 128) &&
+        isStr(data.reason, 0, 500) &&
+        isBoundedList(data.items, 200) &&
+        isOptStr(data, 'notes', 500) &&
+        isOptStr(data, 'journalEntryId', 128) &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidReconciliation(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'accountId', 'statementDate', 'statementBalance', 'bookBalance', 'difference', 'isReconciled', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'accountId', 'statementDate', 'statementBalance', 'bookBalance', 'difference', 'isReconciled', 'notes', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.accountId, 1, 128) &&
+        isStr(data.statementDate, 4, 32) &&
+        data.statementBalance is number &&
+        data.bookBalance is number &&
+        data.difference is number &&
+        data.isReconciled is bool &&
+        isOptStr(data, 'notes', 500) &&
+        isOptStr(data, 'clientCreatedAt', 64) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data, recordId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'timestamp', 'userName', 'userRole', 'action', 'module', 'details', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'timestamp', 'userName', 'userRole', 'action', 'module', 'entityId', 'entityNumber', 'details', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == recordId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.timestamp, 4, 64) &&
+        isStr(data.userName, 1, 150) &&
+        isStr(data.userRole, 1, 40) &&
+        isStr(data.action, 1, 32) &&
+        isStr(data.module, 1, 100) &&
+        isOptStr(data, 'entityId', 128) &&
+        isOptStr(data, 'entityNumber', 80) &&
+        isStr(data.details, 0, 500) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAuditSnapshot(data, snapshotId, workspaceId) {
+      return data.keys().hasAll(['id', 'ownerId', 'companyName', 'baseCurrency', 'invoicesCount', 'vouchersCount', 'productsCount', 'contactsCount', 'journalEntriesCount', 'totalSalesBase', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'ownerId', 'companyName', 'baseCurrency', 'invoicesCount', 'vouchersCount', 'productsCount', 'contactsCount', 'journalEntriesCount', 'totalSalesBase', 'createdAt', 'updatedAt']) &&
+        isValidId(data.id) && data.id == snapshotId &&
+        isValidId(data.ownerId) && data.ownerId == workspaceId &&
+        isStr(data.companyName, 1, 200) &&
+        isStr(data.baseCurrency, 1, 12) &&
+        data.invoicesCount is number &&
+        data.vouchersCount is number &&
+        data.productsCount is number &&
+        data.contactsCount is number &&
+        data.journalEntriesCount is number &&
+        data.totalSalesBase is number &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // ==================== COLLECTION MATCH RULES ====================
+
+    // 1. Trusted Admin Markers
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidId(adminId) && isValidAdminMarker(incoming(), adminId) && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // 2. Tenant User Directory (Strict PII Isolation)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedUser() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().role == 'USER' &&
+        incoming().status == 'ACTIVE' &&
+        incoming().accountingAccessGranted == false &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().tenantCode == existing().tenantCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'role', 'updatedAt'])
+          ) ||
+          (
+            isOwner(userId) &&
+            existing().status == 'ACTIVE' &&
+            incoming().role == existing().role &&
+            incoming().status == existing().status &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'companyName', 'accountingAccessGranted', 'lastLoginAt', 'updatedAt'])
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // 3. Master Gate Workspaces (Private per User UID; Admin blocked unless adminAuditAuthorized == true)
+    match /workspaces/{workspaceId} {
+      allow get: if isSignedIn() && isValidId(workspaceId) && (
+        isOwner(workspaceId) ||
+        (isAdmin() && existing().adminAuditAuthorized == true)
+      );
+
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser() &&
+        isOwner(workspaceId) &&
+        isValidId(workspaceId) &&
+        isValidWorkspace(incoming(), workspaceId) &&
+        incoming().status == 'ACTIVE' &&
+        incoming().adminAuditAuthorized == false &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(workspaceId) &&
+        isValidWorkspace(incoming(), workspaceId) &&
+        incoming().id == existing().id &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().tenantCode == existing().tenantCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          (
+            isOwner(workspaceId) &&
+            existing().status == 'ACTIVE' &&
+            incoming().status == existing().status && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['adminAuditAuthorized', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['companyName', 'settings', 'currencies', 'branches', 'warehouses', 'costCenters', 'staffUsers', 'currentStaffUserId', 'updatedAt'])
+            )
+          )
+        );
+
+      allow delete: if false;
+
+      // ---- Tenant Subcollections (100% Owner-Isolated via Master Gate) ----
+
+      match /accounts/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidAccount(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidAccount(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['code', 'nameAr', 'nameEn', 'category', 'parentCode', 'level', 'balance', 'currency', 'isDebitNormal', 'isSystemAccount', 'description', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /products/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidProduct(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidProduct(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['code', 'barcode', 'nameAr', 'category', 'unit', 'costPrice', 'salePrice', 'wholesalePrice', 'specialPrice', 'stockQty', 'reservedQty', 'minStockAlert', 'taxRate', 'units', 'isComposite', 'components', 'warehouseStocks', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /contacts/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidContact(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidContact(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['code', 'name', 'type', 'phone', 'email', 'taxNumber', 'address', 'accountId', 'balance', 'creditLimit', 'preferredCurrency', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /invoices/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidInvoice(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidInvoice(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          (!('workflowStatus' in existing()) || existing().workflowStatus != 'VOID') &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['dueDate', 'items', 'subtotal', 'discountTotal', 'invoiceDiscount', 'taxTotal', 'grandTotal', 'paymentMethod', 'paidAmount', 'remainingAmount', 'cashAccountId', 'notes', 'status', 'workflowStatus', 'journalEntryId', 'currency', 'exchangeRate', 'grandTotalBase', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /quotations/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidQuotation(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidQuotation(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          existing().status != 'CANCELLED' &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['validUntil', 'items', 'subtotal', 'taxTotal', 'grandTotal', 'notes', 'status', 'convertedInvoiceId', 'currency', 'exchangeRate', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /returnInvoices/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidReturnInvoice(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidReturnInvoice(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['reason', 'journalEntryId', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /vouchers/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidVoucher(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidVoucher(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['referenceNumber', 'description', 'journalEntryId', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /journalEntries/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidJournalEntry(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidJournalEntry(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['description', 'isPosted', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /stockMovements/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockMovement(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockMovement(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /stockAdjustments/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockAdjustment(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockAdjustment(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['reason', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /stockTransfers/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockTransfer(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockTransfer(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /stockReceiptNotes/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockReceiptNote(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidStockReceiptNote(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'journalEntryId', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /reconciliations/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidReconciliation(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidReconciliation(incoming(), recordId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'isReconciled', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /auditLogs/{recordId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(recordId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) &&
+          isValidAuditLog(incoming(), recordId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if false;
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(recordId) && isActiveWorkspaceOwner(workspaceId);
+      }
+
+      match /auditSnapshot/{snapshotId} {
+        allow get: if isSignedIn() && isValidId(workspaceId) && isValidId(snapshotId) && (
+          isActiveWorkspaceOwner(workspaceId) ||
+          (isAdmin() && isWorkspaceAuditAuthorized(workspaceId))
+        );
+        allow list: if false;
+        allow create: if isVerifiedUser() && isValidId(workspaceId) && isValidId(snapshotId) &&
+          isValidAuditSnapshot(incoming(), snapshotId, workspaceId) &&
+          incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId);
+        allow update: if isVerifiedUser() && isValidId(workspaceId) && isValidId(snapshotId) &&
+          isValidAuditSnapshot(incoming(), snapshotId, workspaceId) &&
+          incoming().id == existing().id && incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time &&
+          isActiveWorkspaceOwner(workspaceId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['companyName', 'baseCurrency', 'invoicesCount', 'vouchersCount', 'productsCount', 'contactsCount', 'journalEntriesCount', 'totalSalesBase', 'updatedAt']);
+        allow delete: if isVerifiedUser() && isValidId(workspaceId) && isValidId(snapshotId) && isActiveWorkspaceOwner(workspaceId);
+      }
+    }
+  }
+}

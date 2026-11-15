@@ -5,7 +5,7 @@ import './index.css';
 if (typeof window !== 'undefined' && 'caches' in window) {
   caches.keys().then((keys) => {
     keys.forEach((key) => {
-      if (key !== 'alghafari-soft-pro-v4-offline-ready') {
+      if (key !== 'alghafari-soft-pro-v5-3d-logo') {
         caches.delete(key);
       }
     });
@@ -13,13 +13,19 @@ if (typeof window !== 'undefined' && 'caches' in window) {
 }
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
-      reg.update();
-    }).catch((err) => {
-      console.warn('SW registration info:', err);
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
+        reg.update();
+      }).catch((err) => {
+        console.warn('SW registration info:', err);
+      });
     });
-  });
+  } else {
+    navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((reg) => reg.unregister());
+    }).catch(() => {});
+  }
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

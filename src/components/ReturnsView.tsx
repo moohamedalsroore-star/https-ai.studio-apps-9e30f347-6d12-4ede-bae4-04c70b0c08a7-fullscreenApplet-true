@@ -17,6 +17,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { PaymentMethod, ReturnInvoice } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout } from './UnifiedDocumentLayout';
 import { FreeNumberInput } from './FreeNumberInput';
 import { useBackHandler } from '../hooks/useBackHandler';
 
@@ -377,8 +378,8 @@ export const ReturnsView: React.FC = () => {
 
       {/* CREATE RETURN MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90dvh] my-auto overscroll-contain overflow-hidden">
             <div className={`p-4 border-b flex items-center justify-between shrink-0 ${
               returnType === 'SALES_RETURN' ? 'bg-red-950/40 border-red-500/30' : 'bg-amber-950/40 border-amber-500/30'
             }`}>
@@ -405,7 +406,7 @@ export const ReturnsView: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSaveReturn} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
+            <form onSubmit={handleSaveReturn} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-6 sm:pb-6 touch-pan-y">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -567,8 +568,8 @@ export const ReturnsView: React.FC = () => {
 
       {/* PREVIEW RETURN MODAL */}
       {previewReturn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto no-print-bg">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden print-only-wrapper">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm">إشعار مردود: {previewReturn.returnNumber}</span>
@@ -599,72 +600,53 @@ export const ReturnsView: React.FC = () => {
               </div>
             </div>
 
-            <div id="return-print-content" className="p-8 text-right printable-card text-xs space-y-4">
-              <div className="text-center border-b-2 border-slate-900 pb-3">
-                <h3 className="text-lg font-black">{settings.companyName}</h3>
-                <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-                <div className="font-bold text-sm text-red-600 mt-2">
-                  {previewReturn.type === 'SALES_RETURN' ? 'إشعار دائن - مردود مبيعات' : 'إشعار مدين - مردود مشتريات'}
+            <div id="return-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle={previewReturn.type === 'SALES_RETURN' ? 'إشعار دائن - مردود مبيعات' : 'إشعار مدين - مردود مشتريات'}
+                documentSubtitle={previewReturn.type === 'SALES_RETURN' ? 'Credit Note - Sales Return' : 'Debit Note - Purchase Return'}
+                documentNumber={previewReturn.returnNumber}
+                documentDate={previewReturn.date}
+                documentTypeBadge={previewReturn.type === 'SALES_RETURN' ? 'إشعار دائن ضريبي' : 'إشعار مدين ضريبي'}
+                partyLabel={previewReturn.type === 'SALES_RETURN' ? 'العميل' : 'المورد'}
+                partyName={previewReturn.partyName}
+                paymentMethod={previewReturn.paymentMethod}
+                currency={previewReturn.currency || settings.baseCurrency}
+                subtotal={previewReturn.subtotal}
+                discount={previewReturn.items.reduce((s, i) => s + (i.discount || 0), 0)}
+                taxTotal={previewReturn.taxTotal}
+                grandTotal={previewReturn.grandTotal}
+                notes={previewReturn.reason}
+                referenceNumber={previewReturn.originalInvoiceNumber}
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                    <thead>
+                      <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">الصنف المرتجع</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">السعر</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewReturn.items.map((it, idx) => (
+                        <tr key={it.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl">
-                <div>
-                  <div><span className="font-bold">رقم الإشعار:</span> {previewReturn.returnNumber}</div>
-                  <div><span className="font-bold">التاريخ:</span> {previewReturn.date}</div>
-                  <div><span className="font-bold">السبب:</span> {previewReturn.reason}</div>
-                </div>
-                <div>
-                  <div><span className="font-bold">الطرف الآخر:</span> {previewReturn.partyName}</div>
-                  <div><span className="font-bold">طريقة التسوية:</span> {previewReturn.paymentMethod}</div>
-                </div>
-              </div>
-
-              <table className="w-full text-right border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-900 bg-slate-200">
-                    <th className="py-2 px-2">الصنف المرتجع</th>
-                    <th className="py-2 px-2 text-center">الكمية</th>
-                    <th className="py-2 px-2 text-center">السعر</th>
-                    <th className="py-2 px-2 text-center">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300">
-                  {previewReturn.items.map((it) => (
-                    <tr key={it.id}>
-                      <td className="py-2 px-2 font-bold">{it.productName}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="border-t-2 border-slate-900 pt-3 flex justify-between">
-                <div className="text-xs text-slate-600">
-                  <div>القيد الآلي المرتبط: {previewReturn.journalEntryId || 'مرحل'}</div>
-                </div>
-                <div className="w-48 space-y-1 font-mono-num text-xs">
-                  <div className="flex justify-between">
-                    <span>المجموع:</span>
-                    <span>{previewReturn.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>الضريبة المعكوسة:</span>
-                    <span>{previewReturn.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                    <span>الإجمالي المسترجع:</span>
-                    <span>{previewReturn.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-                <span className="font-bold">المبلغ كتابة:</span>{' '}
-                {tafqeet(previewReturn.grandTotal, settings.baseCurrency, 'هللة')}
-              </div>
+              </UnifiedDocumentLayout>
             </div>
           </div>
         </div>
@@ -672,74 +654,53 @@ export const ReturnsView: React.FC = () => {
 
       {/* Hidden Print Container for the Active Selected Return Invoice (Used by top action bar) */}
       {activeReturn && (
-        <div id="selected-return-document-card" className="hidden print:block printable-card p-8 text-right text-xs space-y-4">
-          <div className="text-center border-b-2 border-slate-900 pb-3">
-            <h3 className="text-lg font-black text-slate-900">{settings.companyName}</h3>
-            <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-            <div className="font-bold text-sm text-slate-900 mt-2">
-              {activeReturn.type === 'SALES_RETURN' ? 'إشعار دائن - مردود مبيعات' : 'إشعار مدين - مردود مشتريات'}
+        <div id="selected-return-document-card" className="hidden print:block printable-card p-2 sm:p-4 text-right">
+          <UnifiedDocumentLayout
+            documentTitle={activeReturn.type === 'SALES_RETURN' ? 'إشعار دائن - مردود مبيعات' : 'إشعار مدين - مردود مشتريات'}
+            documentSubtitle={activeReturn.type === 'SALES_RETURN' ? 'Credit Note - Sales Return' : 'Debit Note - Purchase Return'}
+            documentNumber={activeReturn.returnNumber}
+            documentDate={activeReturn.date}
+            documentTypeBadge={activeReturn.type === 'SALES_RETURN' ? 'إشعار دائن ضريبي' : 'إشعار مدين ضريبي'}
+            partyLabel={activeReturn.type === 'SALES_RETURN' ? 'العميل' : 'المورد'}
+            partyName={activeReturn.partyName}
+            paymentMethod={activeReturn.paymentMethod}
+            currency={activeReturn.currency || settings.baseCurrency}
+            subtotal={activeReturn.subtotal}
+            discount={activeReturn.items.reduce((s, i) => s + (i.discount || 0), 0)}
+            taxTotal={activeReturn.taxTotal}
+            grandTotal={activeReturn.grandTotal}
+            notes={activeReturn.reason}
+            referenceNumber={activeReturn.originalInvoiceNumber}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                <thead>
+                  <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                    <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                    <th className="py-2 px-2 border border-slate-400">الصنف المرتجع</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">السعر</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-300">
+                  {activeReturn.items.map((it, idx) => (
+                    <tr key={it.id} className="hover:bg-slate-50">
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                      <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl text-slate-900">
-            <div>
-              <div><span className="font-bold">رقم الإشعار:</span> {activeReturn.returnNumber}</div>
-              <div><span className="font-bold">التاريخ:</span> {activeReturn.date}</div>
-              {activeReturn.originalInvoiceNumber && (
-                <div><span className="font-bold">رقم الفاتورة الأصلية:</span> {activeReturn.originalInvoiceNumber}</div>
-              )}
-            </div>
-            <div>
-              <div><span className="font-bold">الطرف الآخر:</span> {activeReturn.partyName}</div>
-              <div><span className="font-bold">سبب الإرجاع:</span> {activeReturn.reason}</div>
-            </div>
-          </div>
-
-          <table className="w-full text-right border-collapse text-xs text-slate-900">
-            <thead>
-              <tr className="border-b-2 border-slate-900 bg-slate-200">
-                <th className="py-2 px-2">الصنف المرتجع</th>
-                <th className="py-2 px-2 text-center">الكمية</th>
-                <th className="py-2 px-2 text-center">السعر</th>
-                <th className="py-2 px-2 text-center">الإجمالي</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-300">
-              {activeReturn.items.map((it) => (
-                <tr key={it.id}>
-                  <td className="py-2 px-2 font-bold">{it.productName}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="border-t-2 border-slate-900 pt-3 flex justify-between text-slate-900">
-            <div className="text-xs text-slate-600">
-              <div>القيد الآلي المرتبط: {activeReturn.journalEntryId || 'مرحل'}</div>
-            </div>
-            <div className="w-48 space-y-1 font-mono-num text-xs">
-              <div className="flex justify-between">
-                <span>المجموع:</span>
-                <span>{activeReturn.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>الضريبة المعكوسة:</span>
-                <span>{activeReturn.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                <span>الإجمالي المسترجع:</span>
-                <span>{activeReturn.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-2 bg-slate-100 rounded text-slate-800 text-[11px]">
-            <span className="font-bold">المبلغ كتابة:</span>{' '}
-            {tafqeet(activeReturn.grandTotal, settings.baseCurrency, 'هللة')}
-          </div>
+          </UnifiedDocumentLayout>
         </div>
       )}
     </div>

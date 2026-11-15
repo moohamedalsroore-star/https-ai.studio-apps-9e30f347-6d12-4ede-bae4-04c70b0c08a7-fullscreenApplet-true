@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { CurrencyConfig } from '../types/accounting';
+import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 
 export const CurrencyManager: React.FC = () => {
   const {
@@ -118,7 +120,13 @@ export const CurrencyManager: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <DocumentActionsBar
+            targetElementId="currencies-report-content"
+            filename={`نشرة_العملات_وأسعار_الصرف_${settings.companyName}`}
+            documentTitle="نشرة العملات المعتمدة وأسعار الصرف"
+            hasData={currencies.length > 0}
+          />
           <button
             onClick={handleAutoUpdateRates}
             disabled={isUpdating}
@@ -243,6 +251,22 @@ export const CurrencyManager: React.FC = () => {
       </div>
 
       {/* Currencies & Exchange Rates Table */}
+      <div id="currencies-report-content" className="space-y-4 printable-card">
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle="نشرة العملات المعتمدة وأسعار الصرف"
+            documentSubtitle="Multi-Currency Exchange Rates Schedule"
+            documentNumber={`FX-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge="أسعار الصرف"
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'العملة الأساسية', value: settings.baseCurrency },
+              { label: 'عدد العملات', value: `${currencies.length} عملة` },
+            ]}
+          />
+        </div>
+
       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 shadow-xl">
         <table className="w-full text-right text-sm">
           <thead className="bg-slate-800/90 text-slate-300 font-bold text-xs uppercase tracking-wider border-b border-slate-700">
@@ -253,7 +277,7 @@ export const CurrencyManager: React.FC = () => {
               <th className="py-3 px-4 text-center">سعر الصرف الحالي (مقابل {settings.baseCurrency})</th>
               <th className="py-3 px-4 text-center">التغير (24 ساعة)</th>
               <th className="py-3 px-4 text-center">آخر تحديث</th>
-              <th className="py-3 px-4 text-center">تعديل سعر الصرف</th>
+              <th className="py-3 px-4 text-center no-print">تعديل سعر الصرف</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80">
@@ -296,7 +320,7 @@ export const CurrencyManager: React.FC = () => {
                   <td className="py-3.5 px-4 text-center font-mono-num text-xs text-slate-400">
                     {curr.lastUpdated || 'الآن'}
                   </td>
-                  <td className="py-3.5 px-4 text-center">
+                  <td className="py-3.5 px-4 text-center no-print">
                     {!curr.isBase && (
                       <div className="flex items-center justify-center gap-1.5">
                         <input
@@ -336,10 +360,18 @@ export const CurrencyManager: React.FC = () => {
         </table>
       </div>
 
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`FX-${new Date().getFullYear()}`}
+            signatureLabels={['مسؤول الخزينة', 'المحاسب المالي', 'اعتماد الإدارة / الختم']}
+          />
+        </div>
+      </div>
+
       {/* MODAL 1: ADD NEW CURRENCY */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-4 max-h-[90dvh] overflow-y-auto my-auto">
             <h3 className="font-bold text-white text-base flex items-center gap-2">
               <Coins className="w-5 h-5 text-emerald-400" />
               إضافة عملة أجنبية جديدة
@@ -418,8 +450,8 @@ export const CurrencyManager: React.FC = () => {
 
       {/* MODAL 2: FX REVALUATION */}
       {showRevalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl w-full max-w-lg shadow-2xl p-5 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-purple-500/30 rounded-2xl w-full max-w-lg shadow-2xl p-5 space-y-4 max-h-[90dvh] overflow-y-auto my-auto">
             <h3 className="font-bold text-white text-base flex items-center gap-2">
               <Scale className="w-5 h-5 text-purple-400" />
               إثبات وترحيل قيد فروق أسعار الصرف (FX Revaluation)

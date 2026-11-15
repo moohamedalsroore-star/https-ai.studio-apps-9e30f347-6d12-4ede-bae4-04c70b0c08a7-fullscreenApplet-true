@@ -46,8 +46,8 @@ export const DuplicateItemResolutionModal: React.FC<DuplicateItemResolutionModal
   const mergedTotal = mergedQty * itemInfo.existingUnitPrice;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain">
+      <div className="bg-slate-900 border border-amber-500/40 rounded-3xl w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90dvh] my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="p-4 bg-amber-950/40 border-b border-amber-500/30 flex items-center justify-between">
           <div className="flex items-center gap-2.5">

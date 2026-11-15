@@ -17,6 +17,7 @@ import {
 import { useAccounting } from '../context/AccountingContext';
 import { Account, AccountCategory } from '../types/accounting';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 
 export const ChartOfAccountsView: React.FC = () => {
   const {
@@ -183,13 +184,19 @@ export const ChartOfAccountsView: React.FC = () => {
       {/* Interactive Hierarchical Accounts Tree / Table */}
       <div id="coa-tree-content" className="space-y-4 printable-card">
         {/* Printable Accounts Tree Header */}
-        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
-          <h2 className="text-2xl font-black">{settings.companyName}</h2>
-          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
-          <h3 className="text-lg font-bold mt-2">دليل وشجرة الحسابات العامة والأرصدة اللحظية (Chart of Accounts)</h3>
-          <div className="text-xs text-slate-600 font-mono-num mt-1">
-            التاريخ: {new Date().toISOString().split('T')[0]} | عدد الحسابات: {filteredAccounts.length} | العملة: {settings.baseCurrency}
-          </div>
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle="دليل وشجرة الحسابات العامة والأرصدة اللحظية"
+            documentSubtitle="Chart of Accounts & Live Balances"
+            documentNumber={`COA-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge="دليل الحسابات"
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'عدد الحسابات', value: `${filteredAccounts.length} حساب` },
+              { label: 'التصنيف', value: selectedCategory === 'ALL' ? 'جميع الحسابات' : selectedCategory },
+            ]}
+          />
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 shadow-xl">
@@ -202,7 +209,7 @@ export const ChartOfAccountsView: React.FC = () => {
               <th className="py-3 px-4 text-center">المستوى</th>
               <th className="py-3 px-4 text-center">طبيعة الحساب</th>
               <th className="py-3 px-4 text-center">الرصيد الفعلي الحالي</th>
-              <th className="py-3 px-4 text-center">إجراءات</th>
+              <th className="py-3 px-4 text-center no-print">إجراءات</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/80">
@@ -258,7 +265,7 @@ export const ChartOfAccountsView: React.FC = () => {
                       <span className="text-xs font-normal text-slate-400">{settings.baseCurrency}</span>
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-center">
+                  <td className="py-3 px-4 text-center no-print">
                     {!acc.isSystemAccount ? (
                       <button
                         onClick={() => {
@@ -286,12 +293,19 @@ export const ChartOfAccountsView: React.FC = () => {
           </tbody>
         </table>
         </div>
+
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`COA-${new Date().getFullYear()}`}
+            signatureLabels={['إعداد المحاسب', 'المراجع المالي', 'اعتماد المدير العام / الختم']}
+          />
+        </div>
       </div>
 
       {/* Add Sub-Account Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 max-h-[90dvh] overflow-y-auto my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Plus className="w-5 h-5 text-emerald-400" />

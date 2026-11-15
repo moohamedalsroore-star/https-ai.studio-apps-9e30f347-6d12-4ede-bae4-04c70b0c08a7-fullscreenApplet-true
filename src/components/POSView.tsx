@@ -1,4 +1,4 @@
-import React, { useState, useId } from 'react';
+import React, { useState, useId, useMemo } from 'react';
 import {
   ShoppingCart,
   Barcode,
@@ -20,6 +20,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { Invoice, PaymentMethod, Product, PriceTier } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout } from './UnifiedDocumentLayout';
 
 interface CartItem {
   product: Product;
@@ -70,15 +71,19 @@ export const POSView: React.FC = () => {
     }
   };
 
-  // Filter products for the POS catalog
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch =
-      p.nameAr.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode.includes(searchQuery) ||
-      p.code.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Filter products for the POS catalog with useMemo for instantaneous search & filtering
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return products.filter((p) => {
+      const matchesSearch =
+        !q ||
+        p.nameAr.toLowerCase().includes(q) ||
+        p.barcode.includes(q) ||
+        p.code.toLowerCase().includes(q);
+      const matchesCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, searchQuery, selectedCategory]);
 
   // Add to cart with tier price
   const addToCart = (product: Product) => {
@@ -653,8 +658,8 @@ export const POSView: React.FC = () => {
 
       {/* PRINTABLE OFFICIAL TAX INVOICE MODAL */}
       {printedInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto no-print-bg">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden print-only-wrapper">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
             {/* Top Toolbar (no-print) */}
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <div className="flex items-center gap-2">
@@ -679,98 +684,52 @@ export const POSView: React.FC = () => {
               </div>
             </div>
 
-            {/* Official Tax Invoice Document */}
-            <div id="pos-receipt-print-content" className="p-8 text-right printable-card text-xs space-y-5">
-              {/* Header */}
-              <div className="text-center border-b-2 border-slate-900 pb-4">
-                <h2 className="text-xl font-black text-slate-900">{settings.companyName}</h2>
-                <div className="text-[11px] text-slate-600 mt-1">{settings.companyNameEn}</div>
-                <div className="text-xs font-semibold text-slate-700 mt-1">
-                  الرقم الضريبي: {settings.taxNumber} | س.ت: {settings.commercialRecord}
+            {/* Official Tax Invoice Document with Onyx Pro Template */}
+            <div id="pos-receipt-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle="فاتورة ضريبية مبسطة (POS)"
+                documentSubtitle="Simplified Tax Invoice - Cash & Network Sale"
+                documentNumber={printedInvoice.invoiceNumber}
+                documentDate={printedInvoice.date}
+                documentTypeBadge="نقطة بيع كاشير"
+                partyLabel="العميل"
+                partyName={printedInvoice.partyName || 'عميل نقدي سريع'}
+                paymentMethod={printedInvoice.paymentMethod}
+                currency={printedInvoice.currency || settings.baseCurrency}
+                subtotal={printedInvoice.subtotal}
+                discount={printedInvoice.discountTotal}
+                taxTotal={printedInvoice.taxTotal}
+                grandTotal={printedInvoice.grandTotal}
+                notes={printedInvoice.notes || 'شكراً لتعاملكم معنا | البضاعة المباعة ترد وتستبدل خلال 7 أيام بموجب أصل الفاتورة'}
+                referenceNumber={printedInvoice.journalEntryId}
+              >
+                <div className="overflow-x-auto my-2">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-slate-900 bg-slate-200 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">الصنف والبيان</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">السعر</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {printedInvoice.items.map((item, idx) => (
+                        <tr key={item.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{item.productName}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{item.quantity}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono">{item.unitPrice.toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{item.taxAmount.toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{item.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="text-xs text-slate-600">{settings.address} - هاتف: {settings.phone}</div>
-
-                <div className="inline-block mt-3 px-4 py-1 rounded-full bg-slate-900 text-white font-extrabold text-sm tracking-wider">
-                  فاتورة ضريبية مبسطة (Tax Invoice)
-                </div>
-              </div>
-
-              {/* Invoice Meta */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl">
-                <div>
-                  <div><span className="font-bold">رقم الفاتورة:</span> {printedInvoice.invoiceNumber}</div>
-                  <div><span className="font-bold">تاريخ الإصدار:</span> {printedInvoice.date}</div>
-                  <div><span className="font-bold">طريقة الدفع:</span> {printedInvoice.paymentMethod}</div>
-                </div>
-                <div>
-                  <div><span className="font-bold">العميل:</span> {printedInvoice.partyName}</div>
-                  <div><span className="font-bold">الرقم الضريبي للعميل:</span> غير مسجل</div>
-                  <div><span className="font-bold">حالة السداد:</span> {printedInvoice.status === 'PAID' ? 'مسددة بالكامل' : 'آجلة'}</div>
-                </div>
-              </div>
-
-              {/* Items Table */}
-              <table className="w-full text-right border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-900 bg-slate-200">
-                    <th className="py-2 px-2">م</th>
-                    <th className="py-2 px-2">الصنف والوصف</th>
-                    <th className="py-2 px-2 text-center">الكمية</th>
-                    <th className="py-2 px-2 text-center">السعر</th>
-                    <th className="py-2 px-2 text-center">الضريبة</th>
-                    <th className="py-2 px-2 text-center">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300">
-                  {printedInvoice.items.map((item, idx) => (
-                    <tr key={item.id}>
-                      <td className="py-2 px-2 font-mono-num">{idx + 1}</td>
-                      <td className="py-2 px-2 font-bold">{item.productName}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{item.quantity}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{item.unitPrice.toFixed(2)}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{item.taxAmount.toFixed(2)}</td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">{item.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Totals Summary */}
-              <div className="border-t-2 border-slate-900 pt-3 flex justify-between items-start">
-                {/* QR Code Placeholder for ZATCA standard */}
-                <div className="w-24 h-24 border-2 border-slate-900 flex flex-col items-center justify-center p-1 bg-slate-50 text-[9px] text-center font-mono-num">
-                  <div className="w-16 h-16 bg-slate-900 text-white flex items-center justify-center font-bold text-xs mb-1">
-                    QR-ZATCA
-                  </div>
-                  معتمد هيئة الزكاة
-                </div>
-
-                <div className="w-64 space-y-1 font-mono-num text-xs">
-                  <div className="flex justify-between">
-                    <span>المجموع قبل الضريبة:</span>
-                    <span className="font-bold">{printedInvoice.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>ضريبة القيمة المضافة 15%:</span>
-                    <span className="font-bold">{printedInvoice.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-black border-t border-slate-400 pt-1 text-slate-900">
-                    <span>الإجمالي الشامل (Grand Total):</span>
-                    <span>{printedInvoice.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Arabic Tafqeet */}
-              <div className="p-2.5 rounded-lg bg-slate-100 border border-slate-300 text-xs font-semibold text-slate-800">
-                <span className="font-bold">المبلغ كتابة:</span>{' '}
-                {tafqeet(printedInvoice.grandTotal, settings.baseCurrency, 'هللة')}
-              </div>
-
-              {/* Footer */}
-              <div className="text-center text-[10px] text-slate-500 pt-2 border-t border-slate-200">
-                شكراً لتعاملكم معنا | البضاعة المباعة ترد وتستبدل خلال 7 أيام بموجب أصل الفاتورة
-              </div>
+              </UnifiedDocumentLayout>
             </div>
           </div>
         </div>

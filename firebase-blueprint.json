@@ -1,0 +1,508 @@
+{
+  "entities": {
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Trusted administrator marker document keyed by admin UID.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "UserAccountProfile": {
+      "title": "UserAccountProfile",
+      "description": "Isolated tenant user account directory record with PII and privacy audit consent flag.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tenantCode": { "type": "string", "maxLength": 32 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "companyName": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "enum": ["USER", "ADMIN"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] },
+        "accountingAccessGranted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "tenantCode", "displayName", "email", "role", "status", "accountingAccessGranted", "createdAt", "updatedAt"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Master Gate workspace document storing isolated organization settings, currencies, branches, warehouses, cost centers, and staff roles.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tenantCode": { "type": "string", "maxLength": 32 },
+        "companyName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED"] },
+        "adminAuditAuthorized": { "type": "boolean" },
+        "settings": { "type": "object" },
+        "currencies": { "type": "array" },
+        "branches": { "type": "array" },
+        "warehouses": { "type": "array" },
+        "costCenters": { "type": "array" },
+        "staffUsers": { "type": "array" },
+        "currentStaffUserId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "tenantCode", "companyName", "status", "adminAuditAuthorized", "settings", "currencies", "branches", "warehouses", "costCenters", "staffUsers", "createdAt", "updatedAt"]
+    },
+    "AccountRecord": {
+      "title": "AccountRecord",
+      "description": "Chart of Accounts node isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "nameAr": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "nameEn": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "enum": ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] },
+        "parentCode": { "type": "string", "maxLength": 40 },
+        "level": { "type": "number" },
+        "balance": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 12 },
+        "isDebitNormal": { "type": "boolean" },
+        "isSystemAccount": { "type": "boolean" },
+        "description": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "code", "nameAr", "nameEn", "category", "level", "balance", "currency", "isDebitNormal", "createdAt", "updatedAt"]
+    },
+    "ProductRecord": {
+      "title": "ProductRecord",
+      "description": "Inventory product SKU isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "maxLength": 64 },
+        "barcode": { "type": "string", "maxLength": 128 },
+        "nameAr": { "type": "string", "minLength": 1, "maxLength": 250 },
+        "category": { "type": "string", "maxLength": 100 },
+        "unit": { "type": "string", "maxLength": 50 },
+        "costPrice": { "type": "number" },
+        "salePrice": { "type": "number" },
+        "wholesalePrice": { "type": "number" },
+        "specialPrice": { "type": "number" },
+        "stockQty": { "type": "number" },
+        "reservedQty": { "type": "number" },
+        "minStockAlert": { "type": "number" },
+        "taxRate": { "type": "number" },
+        "units": { "type": "array" },
+        "isComposite": { "type": "boolean" },
+        "components": { "type": "array" },
+        "warehouseStocks": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "code", "nameAr", "category", "unit", "costPrice", "salePrice", "stockQty", "minStockAlert", "taxRate", "createdAt", "updatedAt"]
+    },
+    "ContactRecord": {
+      "title": "ContactRecord",
+      "description": "Customer or supplier contact record isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "type": { "type": "string", "enum": ["CUSTOMER", "SUPPLIER"] },
+        "phone": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 150 },
+        "taxNumber": { "type": "string", "maxLength": 60 },
+        "address": { "type": "string", "maxLength": 300 },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "balance": { "type": "number" },
+        "creditLimit": { "type": "number" },
+        "preferredCurrency": { "type": "string", "maxLength": 12 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "code", "name", "type", "accountId", "balance", "createdAt", "updatedAt"]
+    },
+    "InvoiceRecord": {
+      "title": "InvoiceRecord",
+      "description": "Sales or purchase invoice isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "invoiceNumber": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "enum": ["SALES", "PURCHASE"] },
+        "date": { "type": "string", "maxLength": 32 },
+        "dueDate": { "type": "string", "maxLength": 32 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "partyId": { "type": "string", "maxLength": 128 },
+        "partyName": { "type": "string", "maxLength": 200 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discountTotal": { "type": "number" },
+        "invoiceDiscount": { "type": "number" },
+        "taxTotal": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "CREDIT", "BANK", "SPLIT"] },
+        "paidAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "cashAccountId": { "type": "string", "maxLength": 128 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["PAID", "PARTIAL", "UNPAID"] },
+        "workflowStatus": { "type": "string", "enum": ["DRAFT", "APPROVED", "POSTED", "VOID"] },
+        "journalEntryId": { "type": "string", "maxLength": 128 },
+        "currency": { "type": "string", "maxLength": 12 },
+        "exchangeRate": { "type": "number" },
+        "grandTotalBase": { "type": "number" },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "invoiceNumber", "type", "date", "partyName", "items", "subtotal", "taxTotal", "grandTotal", "paymentMethod", "paidAmount", "remainingAmount", "status", "currency", "exchangeRate", "grandTotalBase", "createdAt", "updatedAt"]
+    },
+    "QuotationRecord": {
+      "title": "QuotationRecord",
+      "description": "Price quotation document isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "quoteNumber": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 32 },
+        "validUntil": { "type": "string", "maxLength": 32 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "partyId": { "type": "string", "maxLength": 128 },
+        "partyName": { "type": "string", "maxLength": 200 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "taxTotal": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["DRAFT", "SENT", "ACCEPTED", "CONVERTED", "CANCELLED"] },
+        "convertedInvoiceId": { "type": "string", "maxLength": 128 },
+        "currency": { "type": "string", "maxLength": 12 },
+        "exchangeRate": { "type": "number" },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "quoteNumber", "date", "partyName", "items", "grandTotal", "status", "currency", "exchangeRate", "createdAt", "updatedAt"]
+    },
+    "ReturnInvoiceRecord": {
+      "title": "ReturnInvoiceRecord",
+      "description": "Sales or purchase return invoice isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "returnNumber": { "type": "string", "maxLength": 80 },
+        "type": { "type": "string", "enum": ["SALES_RETURN", "PURCHASE_RETURN"] },
+        "originalInvoiceNumber": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 32 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "partyId": { "type": "string", "maxLength": 128 },
+        "partyName": { "type": "string", "maxLength": 200 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "taxTotal": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "CREDIT", "BANK", "SPLIT"] },
+        "reason": { "type": "string", "maxLength": 500 },
+        "journalEntryId": { "type": "string", "maxLength": 128 },
+        "currency": { "type": "string", "maxLength": 12 },
+        "exchangeRate": { "type": "number" },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "returnNumber", "type", "date", "partyName", "items", "grandTotal", "paymentMethod", "reason", "currency", "exchangeRate", "createdAt", "updatedAt"]
+    },
+    "VoucherRecord": {
+      "title": "VoucherRecord",
+      "description": "Financial receipt, payment, or transfer voucher isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "voucherNumber": { "type": "string", "maxLength": 80 },
+        "type": { "type": "string", "enum": ["RECEIPT", "PAYMENT", "TRANSFER"] },
+        "date": { "type": "string", "maxLength": 32 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "accountName": { "type": "string", "maxLength": 200 },
+        "partyAccountId": { "type": "string", "maxLength": 128 },
+        "partyAccountName": { "type": "string", "maxLength": 200 },
+        "toAccountId": { "type": "string", "maxLength": 128 },
+        "toAccountName": { "type": "string", "maxLength": 200 },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "CREDIT", "BANK", "SPLIT"] },
+        "referenceNumber": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 500 },
+        "currency": { "type": "string", "maxLength": 12 },
+        "exchangeRate": { "type": "number" },
+        "amountBase": { "type": "number" },
+        "journalEntryId": { "type": "string", "maxLength": 128 },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "voucherNumber", "type", "date", "accountId", "accountName", "partyAccountId", "partyAccountName", "amount", "paymentMethod", "description", "currency", "exchangeRate", "amountBase", "createdAt", "updatedAt"]
+    },
+    "JournalEntryRecord": {
+      "title": "JournalEntryRecord",
+      "description": "Double-entry accounting journal voucher isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "entryNumber": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 32 },
+        "description": { "type": "string", "maxLength": 500 },
+        "sourceType": { "type": "string", "maxLength": 50 },
+        "sourceId": { "type": "string", "maxLength": 128 },
+        "lines": { "type": "array" },
+        "totalDebit": { "type": "number" },
+        "totalCredit": { "type": "number" },
+        "isBalanced": { "type": "boolean" },
+        "isPosted": { "type": "boolean" },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "currency": { "type": "string", "maxLength": 12 },
+        "exchangeRate": { "type": "number" },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "entryNumber", "date", "description", "sourceType", "lines", "totalDebit", "totalCredit", "isBalanced", "isPosted", "createdAt", "updatedAt"]
+    },
+    "StockMovementRecord": {
+      "title": "StockMovementRecord",
+      "description": "Inventory movement ledger record isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "maxLength": 250 },
+        "type": { "type": "string", "maxLength": 50 },
+        "referenceNumber": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 32 },
+        "quantityChange": { "type": "number" },
+        "unitCost": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "productId", "productName", "type", "referenceNumber", "date", "quantityChange", "unitCost", "totalCost", "balanceAfter", "createdAt", "updatedAt"]
+    },
+    "StockAdjustmentRecord": {
+      "title": "StockAdjustmentRecord",
+      "description": "Physical stock count adjustment record isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "adjustmentNumber": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 32 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "productName": { "type": "string", "maxLength": 250 },
+        "systemQty": { "type": "number" },
+        "actualQty": { "type": "number" },
+        "differenceQty": { "type": "number" },
+        "unitCost": { "type": "number" },
+        "totalDifferenceCost": { "type": "number" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "adjustmentNumber", "date", "productId", "productName", "systemQty", "actualQty", "differenceQty", "unitCost", "totalDifferenceCost", "reason", "createdAt", "updatedAt"]
+    },
+    "StockTransferRecord": {
+      "title": "StockTransferRecord",
+      "description": "Inter-warehouse transfer document isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "transferNumber": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 32 },
+        "fromBranchId": { "type": "string", "maxLength": 128 },
+        "toBranchId": { "type": "string", "maxLength": 128 },
+        "fromWarehouseId": { "type": "string", "maxLength": 128 },
+        "toWarehouseId": { "type": "string", "maxLength": 128 },
+        "items": { "type": "array" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["COMPLETED"] },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "transferNumber", "date", "fromWarehouseId", "toWarehouseId", "items", "status", "createdAt", "updatedAt"]
+    },
+    "StockReceiptNoteRecord": {
+      "title": "StockReceiptNoteRecord",
+      "description": "Warehouse receipt or dispatch note isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "receiptNumber": { "type": "string", "maxLength": 80 },
+        "type": { "type": "string", "enum": ["IN", "OUT"] },
+        "date": { "type": "string", "maxLength": 32 },
+        "branchId": { "type": "string", "maxLength": 128 },
+        "warehouseId": { "type": "string", "maxLength": 128 },
+        "reason": { "type": "string", "maxLength": 500 },
+        "items": { "type": "array" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "journalEntryId": { "type": "string", "maxLength": 128 },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "receiptNumber", "type", "date", "warehouseId", "reason", "items", "createdAt", "updatedAt"]
+    },
+    "ReconciliationRecord": {
+      "title": "ReconciliationRecord",
+      "description": "Bank reconciliation statement record isolated to a tenant workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "statementDate": { "type": "string", "maxLength": 32 },
+        "statementBalance": { "type": "number" },
+        "bookBalance": { "type": "number" },
+        "difference": { "type": "number" },
+        "isReconciled": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "clientCreatedAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "accountId", "statementDate", "statementBalance", "bookBalance", "difference", "isReconciled", "createdAt", "updatedAt"]
+    },
+    "AuditLogRecord": {
+      "title": "AuditLogRecord",
+      "description": "Tenant audit log entry isolated to a workspace.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "userName": { "type": "string", "maxLength": 150 },
+        "userRole": { "type": "string", "maxLength": 40 },
+        "action": { "type": "string", "maxLength": 32 },
+        "module": { "type": "string", "maxLength": 100 },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "entityNumber": { "type": "string", "maxLength": 80 },
+        "details": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "timestamp", "userName", "userRole", "action", "module", "details", "createdAt", "updatedAt"]
+    },
+    "AuditSnapshotRecord": {
+      "title": "AuditSnapshotRecord",
+      "description": "Summary KPI snapshot readable by Admin ONLY when tenant grants accountingAccess.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyName": { "type": "string", "maxLength": 200 },
+        "baseCurrency": { "type": "string", "maxLength": 12 },
+        "invoicesCount": { "type": "number" },
+        "vouchersCount": { "type": "number" },
+        "productsCount": { "type": "number" },
+        "contactsCount": { "type": "number" },
+        "journalEntriesCount": { "type": "number" },
+        "totalSalesBase": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "companyName", "baseCurrency", "invoicesCount", "vouchersCount", "productsCount", "contactsCount", "journalEntriesCount", "totalSalesBase", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Trusted administrator marker documents."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccountProfile" },
+      "description": "Tenant user profile directory (PII isolated to owner and verified admin)."
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/Workspace" },
+      "description": "Master Gate workspace root belonging strictly to a single owner UID."
+    },
+    "/workspaces/{workspaceId}/accounts/{recordId}": {
+      "schema": { "$ref": "#/entities/AccountRecord" },
+      "description": "Isolated tenant chart of accounts."
+    },
+    "/workspaces/{workspaceId}/products/{recordId}": {
+      "schema": { "$ref": "#/entities/ProductRecord" },
+      "description": "Isolated tenant inventory products."
+    },
+    "/workspaces/{workspaceId}/contacts/{recordId}": {
+      "schema": { "$ref": "#/entities/ContactRecord" },
+      "description": "Isolated tenant customers and suppliers."
+    },
+    "/workspaces/{workspaceId}/invoices/{recordId}": {
+      "schema": { "$ref": "#/entities/InvoiceRecord" },
+      "description": "Isolated tenant sales and purchase invoices."
+    },
+    "/workspaces/{workspaceId}/quotations/{recordId}": {
+      "schema": { "$ref": "#/entities/QuotationRecord" },
+      "description": "Isolated tenant quotations."
+    },
+    "/workspaces/{workspaceId}/returnInvoices/{recordId}": {
+      "schema": { "$ref": "#/entities/ReturnInvoiceRecord" },
+      "description": "Isolated tenant return invoices."
+    },
+    "/workspaces/{workspaceId}/vouchers/{recordId}": {
+      "schema": { "$ref": "#/entities/VoucherRecord" },
+      "description": "Isolated tenant receipt, payment, and transfer vouchers."
+    },
+    "/workspaces/{workspaceId}/journalEntries/{recordId}": {
+      "schema": { "$ref": "#/entities/JournalEntryRecord" },
+      "description": "Isolated tenant general ledger journal entries."
+    },
+    "/workspaces/{workspaceId}/stockMovements/{recordId}": {
+      "schema": { "$ref": "#/entities/StockMovementRecord" },
+      "description": "Isolated tenant inventory movement ledger."
+    },
+    "/workspaces/{workspaceId}/stockAdjustments/{recordId}": {
+      "schema": { "$ref": "#/entities/StockAdjustmentRecord" },
+      "description": "Isolated tenant stock adjustments."
+    },
+    "/workspaces/{workspaceId}/stockTransfers/{recordId}": {
+      "schema": { "$ref": "#/entities/StockTransferRecord" },
+      "description": "Isolated tenant inter-warehouse transfers."
+    },
+    "/workspaces/{workspaceId}/stockReceiptNotes/{recordId}": {
+      "schema": { "$ref": "#/entities/StockReceiptNoteRecord" },
+      "description": "Isolated tenant stock receipt/dispatch notes."
+    },
+    "/workspaces/{workspaceId}/reconciliations/{recordId}": {
+      "schema": { "$ref": "#/entities/ReconciliationRecord" },
+      "description": "Isolated tenant bank reconciliations."
+    },
+    "/workspaces/{workspaceId}/auditLogs/{recordId}": {
+      "schema": { "$ref": "#/entities/AuditLogRecord" },
+      "description": "Isolated tenant audit trail."
+    },
+    "/workspaces/{workspaceId}/auditSnapshot/{snapshotId}": {
+      "schema": { "$ref": "#/entities/AuditSnapshotRecord" },
+      "description": "Summary KPI snapshot readable by Admin only when tenant grants accountingAccess."
+    }
+  }
+}

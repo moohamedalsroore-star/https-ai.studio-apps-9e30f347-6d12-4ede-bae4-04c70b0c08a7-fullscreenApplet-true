@@ -20,6 +20,7 @@ import { useAccounting } from '../context/AccountingContext';
 import { Invoice, PaymentMethod, Product } from '../types/accounting';
 import { tafqeet } from '../utils/tafqeet';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout } from './UnifiedDocumentLayout';
 import { FreeNumberInput } from './FreeNumberInput';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { ProductQuickSearchModal } from './ProductQuickSearchModal';
@@ -466,8 +467,8 @@ export const PurchasesView: React.FC = () => {
 
       {/* CREATE PURCHASE INVOICE MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-start sm:justify-center items-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain touch-pan-y">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[92dvh] my-auto overscroll-contain overflow-hidden">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90dvh] my-auto overscroll-contain overflow-hidden">
             <div className="p-4 bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <Truck className="w-5 h-5 text-amber-400" />
@@ -492,7 +493,7 @@ export const PurchasesView: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSavePurchase} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-52 sm:pb-6 touch-pan-y">
+            <form onSubmit={handleSavePurchase} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 pb-6 sm:pb-6 touch-pan-y">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">المورد</label>
@@ -735,8 +736,8 @@ export const PurchasesView: React.FC = () => {
 
       {/* PURCHASE PREVIEW MODAL */}
       {previewInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto no-print-bg">
-          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden print-only-wrapper">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
             <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm">فاتورة شراء: {previewInvoice.invoiceNumber}</span>
@@ -767,63 +768,56 @@ export const PurchasesView: React.FC = () => {
               </div>
             </div>
 
-            <div id="purchase-print-content" className="p-8 text-right printable-card text-xs space-y-4">
-              <div className="text-center border-b-2 border-slate-900 pb-3">
-                <h3 className="text-lg font-black">{settings.companyName}</h3>
-                <div className="font-bold text-sm text-slate-900 mt-2">سند استلام وتوريد مشتريات</div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl">
-                <div>
-                  <div><span className="font-bold">رقم الفاتورة:</span> {previewInvoice.invoiceNumber}</div>
-                  <div><span className="font-bold">التاريخ:</span> {previewInvoice.date}</div>
+            <div id="purchase-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle="فاتورة شراء وتوريد مخزني"
+                documentSubtitle="مستند استلام وإدخال بضاعة للمستودعات معتمد"
+                documentNumber={previewInvoice.invoiceNumber}
+                documentDate={previewInvoice.date}
+                documentTypeBadge="مشتريات موردين"
+                partyLabel="المورد"
+                partyName={previewInvoice.partyName}
+                partyTaxNumber={contacts.find(c => c.name === previewInvoice.partyName)?.taxNumber}
+                partyPhone={contacts.find(c => c.name === previewInvoice.partyName)?.phone}
+                partyAddress={contacts.find(c => c.name === previewInvoice.partyName)?.address}
+                paymentMethod={previewInvoice.paymentMethod === 'CASH' ? 'نقداً' : 'آجل للمورد'}
+                currency={previewInvoice.currency || settings.baseCurrency}
+                subtotal={previewInvoice.subtotal}
+                discount={previewInvoice.discountTotal}
+                taxTotal={previewInvoice.taxTotal}
+                grandTotal={previewInvoice.grandTotal}
+                notes={previewInvoice.notes}
+                referenceNumber={previewInvoice.journalEntryId}
+              >
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                    <thead>
+                      <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">اسم الصنف المورد</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">سعر الشراء</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewInvoice.items.map((it, idx) => (
+                        <tr key={it.id} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                          <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <div>
-                  <div><span className="font-bold">المورد:</span> {previewInvoice.partyName}</div>
-                  <div><span className="font-bold">طريقة الدفع:</span> {previewInvoice.paymentMethod}</div>
-                </div>
-              </div>
-
-              <table className="w-full text-right border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-slate-900 bg-slate-200">
-                    <th className="py-2 px-2">الصنف المستلم</th>
-                    <th className="py-2 px-2 text-center">الكمية</th>
-                    <th className="py-2 px-2 text-center">سعر الشراء</th>
-                    <th className="py-2 px-2 text-center">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-300">
-                  {previewInvoice.items.map((it) => (
-                    <tr key={it.id}>
-                      <td className="py-2 px-2 font-bold">{it.productName}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                      <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                      <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="border-t-2 border-slate-900 pt-3 flex justify-between">
-                <div className="text-xs text-slate-600">
-                  <div>القيد الآلي المرتبط: {previewInvoice.journalEntryId || 'مرحل'}</div>
-                </div>
-                <div className="w-48 space-y-1 font-mono-num text-xs">
-                  <div className="flex justify-between">
-                    <span>المجموع:</span>
-                    <span>{previewInvoice.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>الضريبة 15%:</span>
-                    <span>{previewInvoice.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                    <span>الإجمالي:</span>
-                    <span>{previewInvoice.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-                  </div>
-                </div>
-              </div>
+              </UnifiedDocumentLayout>
             </div>
           </div>
         </div>
@@ -831,64 +825,56 @@ export const PurchasesView: React.FC = () => {
 
       {/* Hidden Print Container for the Active Selected Purchase Invoice (Used by top action bar) */}
       {activePurchase && (
-        <div id="selected-purchase-document-card" className="hidden print:block printable-card p-8 text-right text-xs space-y-4">
-          <div className="text-center border-b-2 border-slate-900 pb-3">
-            <h3 className="text-lg font-black text-slate-900">{settings.companyName}</h3>
-            <div className="text-slate-600 font-mono-num">الرقم الضريبي: {settings.taxNumber}</div>
-            <div className="font-bold text-sm text-slate-900 mt-2">فاتورة شراء وتوريد مخزني معتمدة</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 bg-slate-100 p-3 rounded-xl text-slate-900">
-            <div>
-              <div><span className="font-bold">رقم الفاتورة:</span> {activePurchase.invoiceNumber}</div>
-              <div><span className="font-bold">التاريخ:</span> {activePurchase.date}</div>
+        <div id="selected-purchase-document-card" className="hidden print:block printable-card p-2 sm:p-4 text-right">
+          <UnifiedDocumentLayout
+            documentTitle="فاتورة شراء وتوريد مخزني معتمدة"
+            documentSubtitle="مستند استلام وإدخال بضاعة للمستودعات معتمد"
+            documentNumber={activePurchase.invoiceNumber}
+            documentDate={activePurchase.date}
+            documentTypeBadge="مشتريات موردين"
+            partyLabel="المورد"
+            partyName={activePurchase.partyName}
+            partyTaxNumber={contacts.find(c => c.name === activePurchase.partyName)?.taxNumber}
+            partyPhone={contacts.find(c => c.name === activePurchase.partyName)?.phone}
+            partyAddress={contacts.find(c => c.name === activePurchase.partyName)?.address}
+            paymentMethod={activePurchase.paymentMethod === 'CASH' ? 'نقداً' : 'آجل للمورد'}
+            currency={activePurchase.currency || settings.baseCurrency}
+            subtotal={activePurchase.subtotal}
+            discount={activePurchase.discountTotal}
+            taxTotal={activePurchase.taxTotal}
+            grandTotal={activePurchase.grandTotal}
+            notes={activePurchase.notes}
+            referenceNumber={activePurchase.journalEntryId}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse border border-slate-900 text-xs my-2">
+                <thead>
+                  <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                    <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                    <th className="py-2 px-2 border border-slate-400">اسم الصنف المورد</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الوحدة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-16">الكمية</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">سعر الشراء</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-20">الضريبة</th>
+                    <th className="py-2 px-2 border border-slate-400 text-center w-24">الإجمالي</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-300">
+                  {activePurchase.items.map((it, idx) => (
+                    <tr key={it.id} className="hover:bg-slate-50">
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                      <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{it.productName}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{it.unitName || 'حبة'}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold">{it.quantity}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono">{it.unitPrice.toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono text-slate-600">{(it.taxAmount || 0).toFixed(2)}</td>
+                      <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-slate-950">{it.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <div><span className="font-bold">المورد:</span> {activePurchase.partyName}</div>
-              <div><span className="font-bold">طريقة السداد:</span> {activePurchase.paymentMethod === 'CASH' ? 'نقداً' : 'آجل للمورد'}</div>
-            </div>
-          </div>
-
-          <table className="w-full text-right border-collapse text-xs text-slate-900">
-            <thead>
-              <tr className="border-b-2 border-slate-900 bg-slate-200">
-                <th className="py-2 px-2">الصنف المورد</th>
-                <th className="py-2 px-2 text-center">الكمية الموردة</th>
-                <th className="py-2 px-2 text-center">سعر الشراء</th>
-                <th className="py-2 px-2 text-center">الإجمالي</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-300">
-              {activePurchase.items.map((it) => (
-                <tr key={it.id}>
-                  <td className="py-2 px-2 font-bold">{it.productName}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.quantity}</td>
-                  <td className="py-2 px-2 text-center font-mono-num">{it.unitPrice.toFixed(2)}</td>
-                  <td className="py-2 px-2 text-center font-mono-num font-bold">{it.total.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div className="border-t-2 border-slate-900 pt-3 flex justify-between text-slate-900">
-            <div className="text-xs text-slate-600">
-              <div>القيد الآلي المرتبط: {activePurchase.journalEntryId || 'مرحل'}</div>
-            </div>
-            <div className="w-48 space-y-1 font-mono-num text-xs">
-              <div className="flex justify-between">
-                <span>المجموع:</span>
-                <span>{activePurchase.subtotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>الضريبة 15%:</span>
-                <span>{activePurchase.taxTotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-              <div className="flex justify-between font-black text-sm text-slate-900 border-t border-slate-300 pt-1">
-                <span>الإجمالي:</span>
-                <span>{activePurchase.grandTotal.toFixed(2)} {settings.baseCurrency}</span>
-              </div>
-            </div>
-          </div>
+          </UnifiedDocumentLayout>
         </div>
       )}
 

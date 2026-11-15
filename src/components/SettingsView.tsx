@@ -20,8 +20,13 @@ import {
   CheckCircle2,
   Layers,
   LayoutGrid,
+  Info,
+  Lock,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
+import { useAuth } from '../context/AuthContext';
 import { PrintSettingsTab } from './settings/PrintSettingsTab';
 import { DocumentTemplatesTab } from './settings/DocumentTemplatesTab';
 import { OrganizationInfoTab } from './settings/OrganizationInfoTab';
@@ -32,6 +37,7 @@ import { BackupRestoreTab } from './settings/BackupRestoreTab';
 import { ReportsSettingsTab } from './settings/ReportsSettingsTab';
 import { AppearanceNotificationsTab } from './settings/AppearanceNotificationsTab';
 import { SystemMaintenanceTab } from './settings/SystemMaintenanceTab';
+import { AboutAppTab } from './settings/AboutAppTab';
 import { useBackHandler } from '../hooks/useBackHandler';
 
 type SettingsTabKey =
@@ -44,7 +50,8 @@ type SettingsTabKey =
   | 'backup'
   | 'reports'
   | 'appearance'
-  | 'maintenance';
+  | 'maintenance'
+  | 'about';
 
 interface SettingCardItem {
   id: SettingsTabKey;
@@ -147,6 +154,15 @@ const SETTING_CARDS: SettingCardItem[] = [
     badge: 'فحص وتراخيص',
     keywords: ['صيانة', 'فحص', 'توازن', 'أداء', 'كاش', 'إصدار', 'ترخيص', 'دعم فني', 'تحديث'],
   },
+  {
+    id: 'about',
+    number: 11,
+    title: 'نبذة عن التطبيق',
+    subtitle: 'الدليل التعريفي الرسمي لنظام الغفاري سوفت PRO، المميزات، مقارنة الحلول، وملف الـ PDF',
+    icon: Info,
+    badge: 'دليل التعريف PDF',
+    keywords: ['نبذة', 'عن التطبيق', 'تعريف', 'مميزات', 'pdf', 'ملف', 'دليل', 'الغفاري', 'معلومات', 'المطور'],
+  },
 ];
 
 // Grouped view representation matching the user's screenshot
@@ -211,6 +227,14 @@ const GROUPED_CARDS: GroupedCardItem[] = [
       { id: 'maintenance', label: 'النظام والصيانة' },
     ],
   },
+  {
+    id: 'grp-about',
+    title: 'نبذة عن التطبيق',
+    subtitle: 'دليل التعريف والمميزات الرسمي (PDF)، الركائز الأساسية، وبيانات التواصل',
+    icon: Info,
+    defaultTab: 'about',
+    subTabs: [{ id: 'about', label: 'نبذة عن التطبيق (PDF)' }],
+  },
 ];
 
 export const SettingsView: React.FC = () => {
@@ -230,11 +254,34 @@ export const SettingsView: React.FC = () => {
     radicalFactoryReset,
     showToast,
   } = useAccounting();
+  const { authUser, userProfile, tenantCode, isSuperAdmin, signInWithGoogle, signOutAccount } = useAuth();
 
   // Active subpage (null means user is looking at the Cards Hub overview)
-  const [selectedSection, setSelectedSection] = useState<SettingsTabKey | null>(null);
+  const [selectedSection, setSelectedSection] = useState<SettingsTabKey | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('alghafari_settings_tab');
+      if (saved) {
+        sessionStorage.removeItem('alghafari_settings_tab');
+        return saved as SettingsTabKey;
+      }
+    } catch {}
+    return null;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grouped' | 'detailed'>('grouped');
+
+  React.useEffect(() => {
+    const handleOpenTabEvent = (evt: Event) => {
+      const customEvt = evt as CustomEvent<SettingsTabKey | null>;
+      setSelectedSection(customEvt.detail ?? null);
+      try {
+        sessionStorage.removeItem('alghafari_settings_tab');
+      } catch {}
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('alghafari:open-settings-tab', handleOpenTabEvent);
+    return () => window.removeEventListener('alghafari:open-settings-tab', handleOpenTabEvent);
+  }, []);
 
   // Android hardware back button returns to cards hub
   useBackHandler({
@@ -310,7 +357,7 @@ export const SettingsView: React.FC = () => {
               <span>/</span>
               <span className="text-white font-bold">{activeCardInfo.title}</span>
               <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-400 font-bold border border-slate-700 text-[11px]">
-                {activeCardInfo.number} من 10
+                {activeCardInfo.number} من {SETTING_CARDS.length}
               </span>
             </div>
           </div>
@@ -451,6 +498,8 @@ export const SettingsView: React.FC = () => {
               showToast={showToast}
             />
           )}
+
+          {selectedSection === 'about' && <AboutAppTab />}
         </div>
 
         {/* Bottom Back Button Bar */}
@@ -485,7 +534,7 @@ export const SettingsView: React.FC = () => {
               </span>
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                نظام أوفلاين 100%
+                حساب مستقل ومعزول 100%
               </span>
             </div>
 
@@ -552,7 +601,7 @@ export const SettingsView: React.FC = () => {
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" />
-            <span>بطاقات تفصيلية (10 أقسام)</span>
+            <span>بطاقات تفصيلية ({SETTING_CARDS.length} أقسام)</span>
           </button>
         </div>
       </div>
@@ -674,10 +723,75 @@ export const SettingsView: React.FC = () => {
         )}
       </div>
 
+      {/* Account Identity & Sign-In / Sign-Out Section at Bottom of Settings Menu */}
+      <div className="rounded-3xl bg-slate-950 border-2 border-cyan-500/35 p-4 md:p-5 shadow-2xl space-y-3" dir="rtl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-cyan-500/40 flex items-center justify-center text-emerald-400 shrink-0 shadow-[0_0_16px_rgba(0,200,255,0.2)]">
+              <Lock className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div className="text-right">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-black text-white text-sm md:text-base">
+                  {userProfile?.displayName || authUser?.displayName || 'حساب المستخدم المستقل'}
+                </h3>
+                {isSuperAdmin && (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-400/40">
+                    إدارة النظام
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs">
+                {tenantCode && (
+                  <span className="font-mono text-cyan-300 font-bold">{tenantCode}</span>
+                )}
+                {(userProfile?.email || authUser?.email) && (
+                  <span className="text-slate-400 font-mono text-[11px]">
+                    • {userProfile?.email || authUser?.email}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleOpenSection('users')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-cyan-500/40 text-xs font-bold cursor-pointer transition-all"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>الصلاحيات والخصوصية</span>
+            </button>
+
+            {authUser ? (
+              <button
+                type="button"
+                onClick={signOutAccount}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-950/60 hover:bg-red-900/80 text-red-200 hover:text-white border border-red-500/50 text-xs font-black cursor-pointer transition-all active:scale-95"
+                title="تسجيل الخروج بأمان أو التبديل إلى حساب آخر"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>تسجيل الخروج / تبديل الحساب</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={signInWithGoogle}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 text-white text-xs font-black cursor-pointer transition-all active:scale-95"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>تسجيل الدخول عبر Google</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Footer Info Notice */}
       <div className="text-center text-xs text-slate-500 flex items-center justify-center gap-2">
         <Sparkles className="w-3.5 h-3.5 text-amber-400/60" />
-        <span>جميع الإعدادات يتم حفظها محلياً وبشكل دائم وفوري دون الحاجة إلى اتصال بالإنترنت</span>
+        <span>جميع إعدادات وبيانات حسابك تُحفظ في قاعدة بياناتك السحابية المعزولة وبشكل متزامن فورياً مع دعم العمل أوفلاين</span>
       </div>
     </div>
   );

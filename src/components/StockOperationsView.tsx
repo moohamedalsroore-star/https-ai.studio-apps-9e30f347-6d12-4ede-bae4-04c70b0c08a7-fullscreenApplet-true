@@ -15,10 +15,12 @@ import {
   Trash2,
   Printer,
   X,
+  Eye,
 } from 'lucide-react';
 import { useAccounting } from '../context/AccountingContext';
 import { StockReceiptNote, StockTransfer } from '../types/accounting';
 import { DocumentActionsBar } from './DocumentActionsBar';
+import { UnifiedDocumentLayout, UnifiedDocumentHeader, UnifiedDocumentFooter } from './UnifiedDocumentLayout';
 
 export const StockOperationsView: React.FC = () => {
   const {
@@ -163,17 +165,23 @@ export const StockOperationsView: React.FC = () => {
 
       <div id="stock-operations-table-content" className="space-y-4 printable-card">
         {/* Printable Stock Operations Header */}
-        <div className="hidden print:block text-center border-b-2 border-slate-900 pb-4 text-black">
-          <h2 className="text-2xl font-black">{settings.companyName}</h2>
-          <div className="text-xs font-mono-num mt-1">الرقم الضريبي: {settings.taxNumber}</div>
-          <h3 className="text-lg font-bold mt-2">سجل حركة المناقلات والتحويلات وسندات الاستلام والصرف المخزني</h3>
-          <div className="text-xs text-slate-600 font-mono-num mt-1">
-            التاريخ: {new Date().toISOString().split('T')[0]} | التحويلات: {stockTransfers.length} | السندات: {stockReceiptNotes.length} | العملة: {settings.baseCurrency}
-          </div>
+        <div className="hidden print:block mb-4">
+          <UnifiedDocumentHeader
+            documentTitle="سجل التحويلات والاستلامات والإخراجات المخزنية"
+            documentSubtitle="Stock Transfers & Goods Movement Register"
+            documentNumber={`STK-OPS-${new Date().getFullYear()}`}
+            documentDate={new Date().toISOString().split('T')[0]}
+            documentTypeBadge="سجل حركات مخزنية"
+            currency={settings.baseCurrency}
+            customMeta={[
+              { label: 'التحويلات', value: `${stockTransfers.length} أمر` },
+              { label: 'السندات المخزنية', value: `${stockReceiptNotes.length} سند` },
+            ]}
+          />
         </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-800 space-x-reverse space-x-2">
+      <div className="flex border-b border-slate-800 space-x-reverse space-x-2 no-print">
         <button
           onClick={() => setActiveTab('TRANSFERS')}
           className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
@@ -234,7 +242,7 @@ export const StockOperationsView: React.FC = () => {
                     <th className="py-3 px-4 text-center">عدد الأصناف</th>
                     <th className="py-3 px-4">الملاحظات</th>
                     <th className="py-3 px-4 text-center">الحالة</th>
-                    <th className="py-3 px-4 text-center">إجراءات</th>
+                    <th className="py-3 px-4 text-center no-print">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -257,21 +265,30 @@ export const StockOperationsView: React.FC = () => {
                           مكتمل ومرحل
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => {
-                            openDeleteConfirm({
-                              title: 'تأكيد حذف أمر تحويل مخزني',
-                              itemName: `حركة التحويل: ${t.transferNumber}`,
-                              message: `سيتم حذف أمر التحويل المخزني (${t.items.reduce((s, i) => s + i.quantity, 0)} قطعة) وإلغاء أثره.`,
-                              onConfirm: () => deleteStockTransfer(t.id),
-                            });
-                          }}
-                          className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
-                          title="حذف أمر التحويل"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <td className="py-3 px-4 text-center no-print">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setPreviewTransfer(t)}
+                            className="p-1.5 rounded-lg bg-cyan-950/40 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-900/60 transition-colors cursor-pointer"
+                            title="معاينة وطباعة أمر التحويل المخزني"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              openDeleteConfirm({
+                                title: 'تأكيد حذف أمر تحويل مخزني',
+                                itemName: `حركة التحويل: ${t.transferNumber}`,
+                                message: `سيتم حذف أمر التحويل المخزني (${t.items.reduce((s, i) => s + i.quantity, 0)} قطعة) وإلغاء أثره.`,
+                                onConfirm: () => deleteStockTransfer(t.id),
+                              });
+                            }}
+                            className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
+                            title="حذف أمر التحويل"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -309,7 +326,7 @@ export const StockOperationsView: React.FC = () => {
                       <th className="py-3 px-4 text-center">الكمية الإجمالية</th>
                       <th className="py-3 px-4">السبب / البيان</th>
                       <th className="py-3 px-4 text-center">الحالة</th>
-                      <th className="py-3 px-4 text-center">إجراءات</th>
+                      <th className="py-3 px-4 text-center no-print">إجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -331,21 +348,30 @@ export const StockOperationsView: React.FC = () => {
                             {n.type === 'IN' ? 'إدخال معتمد' : 'صرف معتمد'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => {
-                              openDeleteConfirm({
-                                title: 'تأكيد حذف سند مخزني',
-                                itemName: `السند المخزني: ${n.receiptNumber} (${n.type === 'IN' ? 'إدخال' : 'صرف'})`,
-                                message: `سبب السند: ${n.reason || 'عملية مخزنية'}. سيتم التراجع عن كميات المخزون المتأثرة.`,
-                                onConfirm: () => deleteStockReceiptNote(n.id),
-                              });
-                            }}
-                            className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
-                            title="حذف السند المخزني"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <td className="py-3 px-4 text-center no-print">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setPreviewReceipt(n)}
+                              className="p-1.5 rounded-lg bg-emerald-950/40 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                              title="معاينة وطباعة السند المخزني"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                openDeleteConfirm({
+                                  title: 'تأكيد حذف سند مخزني',
+                                  itemName: `السند المخزني: ${n.receiptNumber} (${n.type === 'IN' ? 'إدخال' : 'صرف'})`,
+                                  message: `سبب السند: ${n.reason || 'عملية مخزنية'}. سيتم التراجع عن كميات المخزون المتأثرة.`,
+                                  onConfirm: () => deleteStockReceiptNote(n.id),
+                                });
+                              }}
+                              className="p-1.5 rounded-lg bg-red-950/40 text-red-400 hover:text-red-300 hover:bg-red-900/60 transition-colors cursor-pointer"
+                              title="حذف السند المخزني"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -356,12 +382,19 @@ export const StockOperationsView: React.FC = () => {
           </div>
         );
       })()}
+
+        <div className="hidden print:block mt-6">
+          <UnifiedDocumentFooter
+            documentNumber={`STK-OPS-${new Date().getFullYear()}`}
+            signatureLabels={['أمين المستودع', 'مراقب المخزون', 'اعتماد الإدارة / الختم']}
+          />
+        </div>
       </div>
 
       {/* MODAL 1: CREATE TRANSFER */}
       {showTransferModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90dvh] my-auto">
             <div className="p-4 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <ArrowLeftRight className="w-5 h-5 text-cyan-400" />
@@ -482,8 +515,8 @@ export const StockOperationsView: React.FC = () => {
 
       {/* MODAL 2: CREATE RECEIPT / ISSUE NOTE */}
       {showReceiptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden my-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain touch-pan-y">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[90dvh] my-auto">
             <div className={`p-4 border-b flex items-center justify-between ${
               receiptType === 'IN' ? 'bg-emerald-950/40 border-emerald-500/30' : 'bg-amber-950/40 border-amber-500/30'
             }`}>
@@ -586,6 +619,146 @@ export const StockOperationsView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PREVIEW STOCK TRANSFER */}
+      {previewTransfer && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
+            <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
+              <span className="font-bold text-sm">أمر تحويل مخزني: {previewTransfer.transferNumber}</span>
+              <div className="flex items-center gap-2">
+                <DocumentActionsBar
+                  targetElementId="stock-transfer-print-content"
+                  filename={`تحويل_مخزني_${previewTransfer.transferNumber}`}
+                  documentTitle={`أمر تحويل مخزني رقم ${previewTransfer.transferNumber}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPreviewTransfer(null)}
+                  className="p-1 rounded-xl text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div id="stock-transfer-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle="أمر تحويل مخزني بين الفروع والمستودعات"
+                documentSubtitle="Inter-Warehouse Stock Transfer Order"
+                documentNumber={previewTransfer.transferNumber}
+                documentDate={previewTransfer.date}
+                documentTypeBadge="تحويل ومناقلة بضاعة"
+                branchName={branches.find(b => b.id === previewTransfer.fromBranchId)?.nameAr || 'الفرع الرئيسي'}
+                warehouseName={`من: ${warehouses.find(w => w.id === previewTransfer.fromWarehouseId)?.nameAr || 'المستودع الرئيسي'} ← إلى: ${warehouses.find(w => w.id === previewTransfer.toWarehouseId)?.nameAr || 'المستودع الثانوي'}`}
+                currency={settings.baseCurrency}
+                notes={previewTransfer.notes}
+                customMeta={[
+                  { label: 'إجمالي الكمية المنقولة', value: <span className="font-bold text-cyan-800 font-mono">{previewTransfer.items.reduce((s, i) => s + i.quantity, 0)} قطعة</span> }
+                ]}
+              >
+                <div className="overflow-x-auto my-3">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs">
+                    <thead>
+                      <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">اسم الصنف المنقول</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الكمية المنقولة</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewTransfer.items.map((it, idx) => {
+                        const prod = products.find(p => p.id === it.productId);
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                            <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{prod?.nameAr || 'صنف مخزني'}</td>
+                            <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{prod?.unit || 'حبة'}</td>
+                            <td className="py-2 px-2 border border-slate-300 text-center font-mono font-black text-cyan-900">{it.quantity}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </UnifiedDocumentLayout>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PREVIEW STOCK RECEIPT / ISSUE */}
+      {previewReceipt && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 overflow-y-auto overscroll-contain no-print-bg">
+          <div className="bg-white text-slate-900 rounded-3xl w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[92dvh] my-auto print-only-wrapper">
+            <div className="p-4 bg-slate-800 text-white flex items-center justify-between no-print">
+              <span className="font-bold text-sm">
+                {previewReceipt.type === 'IN' ? 'إذن إضافة مخزنية' : 'إذن صرف وإخراج مخزني'}: {previewReceipt.receiptNumber}
+              </span>
+              <div className="flex items-center gap-2">
+                <DocumentActionsBar
+                  targetElementId="stock-receipt-print-content"
+                  filename={`${previewReceipt.type === 'IN' ? 'إذن_إضافة_مخزنية' : 'إذن_صرف_مخزني'}_${previewReceipt.receiptNumber}`}
+                  documentTitle={`${previewReceipt.type === 'IN' ? 'إذن إضافة مخزنية' : 'إذن صرف وإخراج مخزني'} رقم ${previewReceipt.receiptNumber}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPreviewReceipt(null)}
+                  className="p-1 rounded-xl text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div id="stock-receipt-print-content" className="p-2 sm:p-4 text-right printable-card">
+              <UnifiedDocumentLayout
+                documentTitle={previewReceipt.type === 'IN' ? 'إذن إضافة وتوريد مخزني' : 'إذن صرف وإخراج مخزني'}
+                documentSubtitle={previewReceipt.type === 'IN' ? 'Goods Received Note (GRN)' : 'Goods Issue Note (GIN)'}
+                documentNumber={previewReceipt.receiptNumber}
+                documentDate={previewReceipt.date}
+                documentTypeBadge={previewReceipt.type === 'IN' ? 'إدخال بضاعة' : 'صرف بضاعة'}
+                branchName={branches.find(b => b.id === previewReceipt.branchId)?.nameAr || 'الفرع الرئيسي'}
+                warehouseName={warehouses.find(w => w.id === previewReceipt.warehouseId)?.nameAr || 'المستودع الرئيسي'}
+                currency={settings.baseCurrency}
+                notes={previewReceipt.reason}
+                customMeta={[
+                  { label: 'إجمالي الكمية', value: <span className="font-bold text-slate-900 font-mono">{previewReceipt.items.reduce((s, i) => s + i.quantity, 0)} قطعة</span> }
+                ]}
+              >
+                <div className="overflow-x-auto my-3">
+                  <table className="w-full text-right border-collapse border border-slate-900 text-xs">
+                    <thead>
+                      <tr className="bg-slate-200 border-b-2 border-slate-900 text-slate-950 font-black">
+                        <th className="py-2 px-2 border border-slate-400 text-center w-10">#</th>
+                        <th className="py-2 px-2 border border-slate-400">اسم الصنف</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الوحدة</th>
+                        <th className="py-2 px-2 border border-slate-400 text-center w-24">الكمية</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {previewReceipt.items.map((it, idx) => {
+                        const prod = products.find(p => p.id === it.productId);
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="py-2 px-2 border border-slate-300 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                            <td className="py-2 px-2 border border-slate-300 font-bold text-slate-900">{prod?.nameAr || 'صنف مخزني'}</td>
+                            <td className="py-2 px-2 border border-slate-300 text-center text-slate-600">{prod?.unit || 'حبة'}</td>
+                            <td className={`py-2 px-2 border border-slate-300 text-center font-mono font-black ${previewReceipt.type === 'IN' ? 'text-emerald-800' : 'text-amber-800'}`}>
+                              {it.quantity}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </UnifiedDocumentLayout>
+            </div>
           </div>
         </div>
       )}

@@ -3,22 +3,12 @@ import {
   Wrench,
   ShieldCheck,
   Zap,
-  Trash2,
   CheckCircle2,
   Phone,
   Mail,
-  MessageSquare,
   Award,
   RefreshCw,
-  Cpu,
-  HardDrive,
   Info,
-  Download,
-  ExternalLink,
-  FileArchive,
-  Smartphone,
-  Sparkles,
-  PackageCheck,
 } from 'lucide-react';
 import { Account, JournalEntry } from '../../types/accounting';
 import { DEFAULT_MAINTENANCE_INFO } from '../../utils/settingsDefaults';
@@ -243,76 +233,7 @@ export const SystemMaintenanceTab: React.FC<SystemMaintenanceTabProps> = ({
         </div>
       </div>
 
-      {/* 4. Google Play Release Package & AAB Download */}
-      <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-950 border-2 border-amber-500/50 shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shrink-0">
-              <Smartphone className="w-6 h-6" />
-            </div>
-            <div>
-              <h4 className="font-black text-white text-sm md:text-base flex items-center gap-2">
-                <span>حزمة النشر على متجر Google Play وملفات التطبيق النهائية</span>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
-                  AAB جاهز
-                </span>
-              </h4>
-              <p className="text-xs text-slate-300 mt-0.5">
-                تنزيل الحزمة الشاملة والمضمونة التي تحتوي على كود الويب المترجم (dist)، الأيقونات، البانر 1024×500، المانيفيست، ودليل النشر.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
-            <span className="font-bold text-amber-400 block flex items-center gap-1.5">
-              <PackageCheck className="w-4 h-4 text-emerald-400" />
-              محتويات الحزمة المرفقة (ZIP):
-            </span>
-            <ul className="text-slate-300 text-[11px] space-y-1 pr-3 list-disc">
-              <li>كود التطبيق الكامل والأوفلاين المترجم (web_app_dist).</li>
-              <li>أيقونة المتجر عالية الدقة 512×512 PNG.</li>
-              <li>الرسم المميز / بانر المتجر الإلزامي 1024×500 PNG.</li>
-              <li>لقطات شاشة الهاتف المعتمدة (Screenshots).</li>
-              <li>ملف manifest.webmanifest و assetlinks.json.</li>
-              <li>دليل النشر والرفع خطوة بخطوة باللغة العربية.</li>
-            </ul>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between gap-3">
-            <div>
-              <span className="font-bold text-cyan-300 block mb-1">الإنتاج المباشر لحزمة .aab:</span>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                التطبيق مهيأ 100% ليتم تحويله إلى حزمة Android App Bundle (.aab) رسمية صالحة للنشر الفوري على Google Play Console.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 pt-1">
-              <a
-                href="/alghafari_soft_pro_playstore_bundle.zip"
-                download="alghafari_soft_pro_playstore_bundle.zip"
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 cursor-pointer transition-all active:scale-95 text-center"
-              >
-                <Download className="w-4 h-4" />
-                <span>تنزيل حزمة الملفات (ZIP - 9.3 MB)</span>
-              </a>
-
-              <a
-                href="https://www.pwabuilder.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 cursor-pointer transition-colors text-center"
-              >
-                <span>فتح PWABuilder</span>
-                <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Official Developer & Technical Support Info */}
+      {/* 4. Official Developer & Technical Support Info */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
         <h4 className="text-xs font-black text-amber-300">معلومات التطوير والدعم الفني المباشر</h4>
 

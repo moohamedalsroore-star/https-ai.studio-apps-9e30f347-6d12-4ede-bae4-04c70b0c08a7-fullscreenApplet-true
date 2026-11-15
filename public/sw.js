@@ -1,11 +1,13 @@
-const CACHE_NAME = 'alghafari-soft-pro-v4-offline-ready';
+const CACHE_NAME = 'alghafari-soft-pro-v5-3d-logo';
 
 const PRECACHE_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/intro.mp4',
-  '/assets/aistudio/1787182612810_5ba9faf5.png',
+  '/assets/aistudio/logo_3d_transparent.png',
+  '/assets/aistudio/file_00000000fa40820896cf5d758e485b3a_666e232b.png',
+  '/assets/aistudio/file_00000000e4f08208a601cf9a623e0b66_a4ff8c63.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
   '/apple-touch-icon.png',

@@ -1,13 +1,14 @@
-// PDF Export & Generation Utility using html2pdf.js
-// Handles document conversion to PDF, direct mobile/desktop device download, and screen preview blob generation
-// Specifically engineered to eliminate Tailwind CSS v4 "oklab" and "oklch" color function incompatibilities in html2canvas.
-// @ts-ignore html2pdf.js untyped module compatibility
-import html2pdf from 'html2pdf.js';
+// PDF Export & Generation Utility using html2pdf.js (loaded on demand)
+// Handles document conversion to PDF, direct mobile/desktop device download, screen preview preparation, and print sanitization.
+// Eliminates Tailwind CSS v4 "oklab"/"oklch" incompatibilities in html2canvas and converts dark-mode report cards into crisp white A4/A5 tabular sheets.
+
+export type PaperFormat = 'A4' | 'A5' | 'THERMAL';
 
 export interface PDFExportOptions {
   filename?: string;
   margin?: number | [number, number, number, number];
   landscape?: boolean;
+  paperFormat?: PaperFormat;
 }
 
 // Canvas-based parser to accurately convert any modern CSS color (oklab, oklch, lab, rgb, etc.) to standard rgb/rgba
@@ -24,7 +25,6 @@ function getHelperCtx(): CanvasRenderingContext2D | null {
 
 /**
  * Mathematical fallback converting OKLab to standard sRGB string
- * Follows W3C CSS Color Module Level 4 specification.
  */
 export function fallbackOklabToRgb(str: string): string {
   try {
@@ -38,7 +38,6 @@ export function fallbackOklabToRgb(str: string): string {
     if (match[3].endsWith('%')) b = (b / 100) * 0.4;
     const alpha = match[4] ? (match[4].endsWith('%') ? parseFloat(match[4]) / 100 : parseFloat(match[4])) : 1;
 
-    // Convert OKLab to linear RGB
     const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
     const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
     const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
@@ -51,7 +50,6 @@ export function fallbackOklabToRgb(str: string): string {
     const gLin = -1.2684380046 * lCube + 2.6097574011 * mCube - 0.3413193965 * sCube;
     const bLin = -0.0041960863 * lCube - 0.7034186147 * mCube + 1.7076147010 * sCube;
 
-    // Gamma correction to sRGB
     const gamma = (val: number) => {
       const clamped = Math.max(0, Math.min(1, val));
       return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
@@ -72,7 +70,6 @@ export function fallbackOklabToRgb(str: string): string {
 
 /**
  * Mathematical fallback converting OKLCH to standard sRGB string
- * Follows W3C CSS Color Module Level 4 specification.
  */
 export function fallbackOklchToRgb(str: string): string {
   try {
@@ -84,12 +81,10 @@ export function fallbackOklchToRgb(str: string): string {
     const h = parseFloat(match[3]);
     const alpha = match[4] ? (match[4].endsWith('%') ? parseFloat(match[4]) / 100 : parseFloat(match[4])) : 1;
 
-    // Convert OKLCH to OKLab
     const hRad = (h * Math.PI) / 180;
     const a = c * Math.cos(hRad);
     const b = c * Math.sin(hRad);
 
-    // Convert OKLab to linear RGB
     const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
     const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
     const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
@@ -102,7 +97,6 @@ export function fallbackOklchToRgb(str: string): string {
     const gLin = -1.2684380046 * lCube + 2.6097574011 * mCube - 0.3413193965 * sCube;
     const bLin = -0.0041960863 * lCube - 0.7034186147 * mCube + 1.7076147010 * sCube;
 
-    // Gamma correction to sRGB
     const gamma = (val: number) => {
       const clamped = Math.max(0, Math.min(1, val));
       return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
@@ -129,7 +123,6 @@ export function convertModernCssColors(colorStr: string): string {
     return colorStr;
   }
 
-  // Quick check if string has any modern CSS color function
   if (!colorStr.includes('oklab') && !colorStr.includes('oklch') && !colorStr.includes('lab(') && !colorStr.includes('lch(')) {
     return colorStr;
   }
@@ -165,7 +158,6 @@ export function convertModernCssColors(colorStr: string): string {
   });
 }
 
-// Backwards compatibility alias
 export const convertOklchStringToRgb = convertModernCssColors;
 
 const COLOR_PROPERTIES = [
@@ -184,10 +176,6 @@ const COLOR_PROPERTIES = [
   'caretColor',
 ] as const;
 
-/**
- * Sanitizes all elements in a DOM subtree by replacing any computed OKLAB / OKLCH colors
- * with explicit standard RGB inline styles so html2canvas never encounters unsupported color functions.
- */
 function sanitizeDomTreeColors(root: HTMLElement | Document) {
   const elements: Element[] = [];
   if ('style' in root && (root as HTMLElement).tagName) {
@@ -219,7 +207,6 @@ function sanitizeDomTreeColors(root: HTMLElement | Document) {
     }
   }
 
-  // Also replace any oklab / oklch in all <style> blocks
   const styleTags = root.querySelectorAll('style');
   styleTags.forEach((styleTag) => {
     if (
@@ -234,10 +221,6 @@ function sanitizeDomTreeColors(root: HTMLElement | Document) {
   });
 }
 
-/**
- * Patches window.getComputedStyle in cloned iframe/document to transparently intercept
- * and convert any oklab / oklch return values on the fly.
- */
 function patchClonedWindowComputedStyle(clonedDoc: Document) {
   const clonedWin = clonedDoc.defaultView || window;
   if (!clonedWin) return;
@@ -267,8 +250,171 @@ function patchClonedWindowComputedStyle(clonedDoc: Document) {
 }
 
 /**
+ * Deeply clones a target DOM element and converts it into a clean, print/PDF/preview-ready white tabular document:
+ * 1. Reveals all `hidden print:block` / `print-only` UnifiedDocumentLayout headers, logos & footers.
+ * 2. Strips `.no-print` and `print:hidden` UI controls.
+ * 3. Normalizes dark-mode UI classes (`bg-slate-900`, `text-white`, `text-slate-300`, etc.) into crisp light-paper ink & borders
+ *    while preserving intentional high-contrast badges inside `.unified-onyx-document` totals/badges.
+ * 4. Ensures all tables and cells have sharp readable borders and unclipped layout.
+ */
+export function buildCleanPrintableClone(targetElement: HTMLElement): HTMLElement {
+  const clone = targetElement.cloneNode(true) as HTMLElement;
+
+  // Reveal root if root itself was hidden for off-screen printing (e.g. #selected-invoice-document-card)
+  if (
+    clone.classList.contains('hidden') &&
+    (clone.classList.contains('print:block') || clone.classList.contains('print-only') || clone.hasAttribute('data-print-reveal'))
+  ) {
+    clone.classList.remove('hidden', 'print:block');
+    clone.classList.add('block');
+    clone.style.display = 'block';
+  }
+
+  // Remove interactive / non-printable controls
+  clone.querySelectorAll('.no-print, .print\\:hidden').forEach((el) => el.remove());
+
+  // Reveal all print-only headers/footers (UnifiedDocumentLayout banners & footers inside inline reports)
+  clone.querySelectorAll('.print\\:block, .print-only, [data-print-reveal="true"]').forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    htmlEl.classList.remove('hidden', 'print:block');
+    htmlEl.classList.add('block');
+    if (htmlEl.style.display === 'none') {
+      htmlEl.style.display = 'block';
+    }
+  });
+
+  // Normalize dark-theme classes into high-contrast crisp white-paper tabular styling
+  const allElements: HTMLElement[] = [clone, ...Array.from(clone.querySelectorAll('*')) as HTMLElement[]];
+
+  const DARK_BG_TOKENS = [
+    'bg-slate-950',
+    'bg-slate-900',
+    'bg-slate-900/90',
+    'bg-slate-900/80',
+    'bg-slate-900/70',
+    'bg-slate-900/60',
+    'bg-slate-900/50',
+    'bg-slate-900/40',
+    'bg-slate-850',
+    'bg-slate-800',
+    'bg-slate-800/80',
+    'bg-slate-800/60',
+    'bg-slate-800/50',
+    'bg-slate-800/40',
+    'bg-slate-800/30',
+    'bg-[#020824]',
+    'bg-[#040c2e]',
+    'bg-[#061340]',
+    'bg-[#0c1a36]',
+  ];
+
+  const DARK_TEXT_REPLACEMENTS: Record<string, string> = {
+    'text-white': 'text-slate-950',
+    'text-slate-50': 'text-slate-950',
+    'text-slate-100': 'text-slate-900',
+    'text-slate-200': 'text-slate-900',
+    'text-slate-300': 'text-slate-800',
+    'text-slate-400': 'text-slate-600',
+    'text-cyan-300': 'text-blue-900',
+    'text-cyan-400': 'text-blue-800',
+    'text-emerald-300': 'text-emerald-800',
+    'text-emerald-400': 'text-emerald-800',
+    'text-amber-300': 'text-amber-800',
+    'text-amber-400': 'text-amber-800',
+    'text-rose-300': 'text-rose-800',
+    'text-rose-400': 'text-rose-800',
+    'text-indigo-300': 'text-indigo-800',
+    'text-indigo-400': 'text-indigo-800',
+    'text-purple-300': 'text-purple-800',
+    'text-purple-400': 'text-purple-800',
+  };
+
+  for (const el of allElements) {
+    // Preserve intentional UnifiedDocumentLayout dark badges (e.g. Grand Total badge or type badge)
+    const isKeepDarkBadge =
+      el.classList.contains('print-keep-dark') ||
+      (el.closest('.unified-onyx-document') !== null &&
+        (el.classList.contains('bg-blue-900') ||
+          (el.classList.contains('bg-slate-900') && el.tagName === 'SPAN')));
+
+    if (isKeepDarkBadge) {
+      el.classList.add('print-keep-dark');
+      continue;
+    }
+
+    const classes = Array.from(el.classList);
+    for (const cls of classes) {
+      if (DARK_BG_TOKENS.includes(cls) || /^bg-slate-(950|900|800)(\/\d+)?$/.test(cls)) {
+        el.classList.remove(cls);
+        if (el.tagName === 'THEAD' || el.tagName === 'TH' || cls.includes('800')) {
+          el.classList.add('bg-slate-100');
+        } else {
+          el.classList.add('bg-white');
+        }
+      } else if (DARK_TEXT_REPLACEMENTS[cls]) {
+        el.classList.remove(cls);
+        el.classList.add(DARK_TEXT_REPLACEMENTS[cls]);
+      } else if (/^border-slate-(900|800|700)(\/\d+)?$/.test(cls)) {
+        el.classList.remove(cls);
+        el.classList.add('border-slate-300');
+      } else if (/^divide-slate-(900|800|700)(\/\d+)?$/.test(cls)) {
+        el.classList.remove(cls);
+        el.classList.add('divide-slate-300');
+      } else if (/^bg-(emerald|rose|amber|cyan|blue|indigo|purple)-(950|900|500)\/(10|15|20|30|40)$/.test(cls)) {
+        el.classList.remove(cls);
+        el.classList.add('bg-slate-50');
+      }
+    }
+
+    // Unclip overflowing scroll wrappers for print/preview
+    if (el.classList.contains('overflow-x-auto') || el.classList.contains('overflow-hidden')) {
+      el.style.overflow = 'visible';
+    }
+    if (el.tagName === 'TABLE') {
+      el.style.width = '100%';
+      el.style.borderCollapse = 'collapse';
+      el.classList.add('border', 'border-slate-300', 'bg-white', 'text-slate-900');
+    } else if (el.tagName === 'TH') {
+      el.style.borderColor = '#cbd5e1';
+      el.style.borderWidth = '1px';
+      el.style.borderStyle = 'solid';
+      el.style.backgroundColor = '#f1f5f9';
+      el.style.color = '#0f172a';
+    } else if (el.tagName === 'TD') {
+      el.style.borderColor = '#cbd5e1';
+      el.style.borderWidth = '1px';
+      el.style.borderStyle = 'solid';
+    }
+  }
+
+  return clone;
+}
+
+/**
+ * Returns clean, high-contrast white tabular HTML for Screen Preview (معاينة على الشاشة) and direct native printing.
+ */
+export function preparePrintableHtml(element: HTMLElement | string): string {
+  const targetElement = typeof element === 'string' ? document.getElementById(element) : element;
+  if (!targetElement) return '';
+  const cleanClone = buildCleanPrintableClone(targetElement);
+  cleanClone.removeAttribute('id');
+  return cleanClone.outerHTML;
+}
+
+function getTargetPaperWidthPx(paperFormat?: PaperFormat): number {
+  if (paperFormat === 'THERMAL') return 320;
+  if (paperFormat === 'A5') return 560;
+  return 800;
+}
+
+function getJsPdfFormat(paperFormat?: PaperFormat): 'a4' | 'a5' | [number, number] {
+  if (paperFormat === 'A5') return 'a5';
+  if (paperFormat === 'THERMAL') return [80, 297];
+  return 'a4';
+}
+
+/**
  * Downloads a target DOM element directly to the device as a high-quality PDF.
- * Optimized for mobile Android, iOS & desktop without OKLAB / OKLCH crashes or freezing.
  */
 export async function downloadElementAsPDF(
   element: HTMLElement | string,
@@ -281,14 +427,14 @@ export async function downloadElementAsPDF(
   }
 
   const cleanFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+  const widthPx = getTargetPaperWidthPx(options?.paperFormat);
 
-  // Clone element into an off-screen container with explicit white theme
-  const printClone = targetElement.cloneNode(true) as HTMLElement;
+  const printClone = buildCleanPrintableClone(targetElement);
   printClone.style.backgroundColor = '#ffffff';
   printClone.style.color = '#0f172a';
-  printClone.style.padding = '24px';
+  printClone.style.padding = options?.paperFormat === 'THERMAL' ? '12px' : '24px';
   printClone.style.margin = '0';
-  printClone.style.width = '800px';
+  printClone.style.width = `${widthPx}px`;
   printClone.style.maxWidth = '100%';
   printClone.style.direction = 'rtl';
   printClone.style.position = 'fixed';
@@ -297,11 +443,10 @@ export async function downloadElementAsPDF(
   printClone.style.zIndex = '-9999';
   document.body.appendChild(printClone);
 
-  // Pre-sanitize the clone before passing to html2pdf
   sanitizeDomTreeColors(printClone);
 
   const opt = {
-    margin: options?.margin ?? [6, 6, 6, 6],
+    margin: options?.margin ?? (options?.paperFormat === 'THERMAL' ? [3, 3, 3, 3] : [6, 6, 6, 6]),
     filename: cleanFilename,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: {
@@ -310,27 +455,26 @@ export async function downloadElementAsPDF(
       letterRendering: true,
       logging: false,
       scrollY: 0,
-      windowWidth: 800,
+      windowWidth: widthPx,
       onclone: (clonedDoc: Document) => {
-        // Intercept all getComputedStyle calls in the cloned document
         patchClonedWindowComputedStyle(clonedDoc);
-        // Deep sanitize all OKLAB & OKLCH colors in the cloned document
         sanitizeDomTreeColors(clonedDoc);
       },
     },
     jsPDF: {
       unit: 'mm',
-      format: 'a4',
+      format: getJsPdfFormat(options?.paperFormat),
       orientation: options?.landscape ? 'landscape' : 'portrait',
     },
   };
 
   try {
+    // @ts-ignore html2pdf.js untyped module compatibility
+    const { default: html2pdf } = await import('html2pdf.js');
     // @ts-ignore
     const pdfWorker = html2pdf().set(opt).from(printClone);
     const pdfBlob = await pdfWorker.output('blob');
 
-    // Create safe download URL
     const blobUrl = URL.createObjectURL(pdfBlob);
     const link = document.createElement('a');
     link.href = blobUrl;
@@ -351,7 +495,7 @@ export async function downloadElementAsPDF(
 }
 
 /**
- * Generates an object URL (blob) of the PDF for Screen Preview (معاينة شاشة)
+ * Generates an object URL (blob) of the PDF for Screen Preview
  */
 export async function generateElementPDFBlobUrl(
   element: HTMLElement | string,
@@ -362,12 +506,13 @@ export async function generateElementPDFBlobUrl(
     throw new Error('Target element not found for PDF export');
   }
 
-  const printClone = targetElement.cloneNode(true) as HTMLElement;
+  const widthPx = getTargetPaperWidthPx(options?.paperFormat);
+  const printClone = buildCleanPrintableClone(targetElement);
   printClone.style.backgroundColor = '#ffffff';
   printClone.style.color = '#0f172a';
-  printClone.style.padding = '24px';
+  printClone.style.padding = options?.paperFormat === 'THERMAL' ? '12px' : '24px';
   printClone.style.margin = '0';
-  printClone.style.width = '800px';
+  printClone.style.width = `${widthPx}px`;
   printClone.style.direction = 'rtl';
   printClone.style.position = 'fixed';
   printClone.style.left = '-9999px';
@@ -386,7 +531,7 @@ export async function generateElementPDFBlobUrl(
       letterRendering: true,
       logging: false,
       scrollY: 0,
-      windowWidth: 800,
+      windowWidth: widthPx,
       onclone: (clonedDoc: Document) => {
         patchClonedWindowComputedStyle(clonedDoc);
         sanitizeDomTreeColors(clonedDoc);
@@ -394,12 +539,14 @@ export async function generateElementPDFBlobUrl(
     },
     jsPDF: {
       unit: 'mm',
-      format: 'a4',
+      format: getJsPdfFormat(options?.paperFormat),
       orientation: options?.landscape ? 'landscape' : 'portrait',
     },
   };
 
   try {
+    // @ts-ignore html2pdf.js untyped module compatibility
+    const { default: html2pdf } = await import('html2pdf.js');
     // @ts-ignore
     const pdfWorker = html2pdf().set(opt).from(printClone);
     const blob = await pdfWorker.output('blob');

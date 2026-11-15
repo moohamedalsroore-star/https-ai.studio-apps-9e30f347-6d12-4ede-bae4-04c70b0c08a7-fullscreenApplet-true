@@ -1,77 +1,213 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users,
   ShieldCheck,
   UserPlus,
-  Key,
   Lock,
-  Eye,
-  Edit,
+  Unlock,
   Trash2,
-  CheckCircle2,
-  XCircle,
-  FileText,
   Clock,
   Shield,
-  Save,
-  RotateCcw,
+  RefreshCw,
+  CheckCircle2,
+  Ban,
+  Eye,
+  Building2,
 } from 'lucide-react';
-import { AppUser, UserRole, UserPermission, AuditLogEntry } from '../../types/settings';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  updateDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { AppUser, UserRole, UserPermission } from '../../types/settings';
 import { INITIAL_APP_USERS } from '../../utils/settingsDefaults';
+import { useAuth, TenantUserProfile } from '../../context/AuthContext';
+import { useAccounting } from '../../context/AccountingContext';
+import { db, handleFirestoreError, OperationType, normalizeTimestampToIso } from '../../lib/firebase';
 
 interface UsersPermissionsTabProps {
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
+interface AuthorizedAuditSummary {
+  companyName: string;
+  baseCurrency: string;
+  invoicesCount: number;
+  vouchersCount: number;
+  productsCount: number;
+  contactsCount: number;
+  journalEntriesCount: number;
+  totalSalesBase: number;
+}
+
 export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showToast }) => {
+  const { authUser, userProfile, tenantCode, isSuperAdmin, toggleAccountingAccessGrant } = useAuth();
+  const { auditLogs: contextAuditLogs } = useAccounting();
+
+  const uidPrefix = authUser?.uid ? `alghafari_tenant_${authUser.uid}` : 'alghafari_guest';
+  const USERS_STORAGE_KEY = `${uidPrefix}_app_users`;
+
   const [users, setUsers] = useState<AppUser[]>(() => {
-    const saved = localStorage.getItem('smart_accountant_pro_users');
-    return saved ? JSON.parse(saved) : INITIAL_APP_USERS;
+    try {
+      const saved = localStorage.getItem(USERS_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return INITIAL_APP_USERS;
   });
 
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
-    const saved = localStorage.getItem('smart_accountant_pro_audit_logs');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'log-1',
-        timestamp: '2026-10-29 15:40:12',
-        userId: 'user-admin',
-        userName: 'المدير العام',
-        action: 'تسجيل دخول ناجح',
-        details: 'فتح التطبيق محلياً بدون إنترنت',
-      },
-      {
-        id: 'log-2',
-        timestamp: '2026-10-29 15:35:00',
-        userId: 'user-admin',
-        userName: 'المدير العام',
-        action: 'تحديث إعدادات النظام',
-        details: 'حفظ إعدادات الهوية والطباعة',
-      },
-      {
-        id: 'log-3',
-        timestamp: '2026-10-29 14:15:30',
-        userId: 'user-cashier',
-        userName: 'كاشير نقطة البيع',
-        action: 'إصدار فاتورة نقدية',
-        details: 'فاتورة مبيعات #INV-1002',
-      },
-    ];
-  });
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(USERS_STORAGE_KEY);
+      if (saved) {
+        setUsers(JSON.parse(saved));
+      } else {
+        setUsers(INITIAL_APP_USERS);
+      }
+    } catch {
+      setUsers(INITIAL_APP_USERS);
+    }
+  }, [USERS_STORAGE_KEY]);
 
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // New user form
+  // Privacy consent toggle state
+  const [updatingConsent, setUpdatingConsent] = useState(false);
+
+  // Super Admin Subscriber Directory State
+  const [subscribers, setSubscribers] = useState<TenantUserProfile[]>([]);
+  const [loadingSubscribers, setLoadingSubscribers] = useState(false);
+  const [authorizedPreview, setAuthorizedPreview] = useState<{
+    user: TenantUserProfile;
+    summary: AuthorizedAuditSummary;
+  } | null>(null);
+
+  // New branch operator form
   const [newUsername, setNewUsername] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('CASHIER');
   const [newPin, setNewPin] = useState('0000');
 
+  const fetchSubscribers = useCallback(async () => {
+    if (!isSuperAdmin) return;
+    setLoadingSubscribers(true);
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const list: TenantUserProfile[] = [];
+      snap.forEach((d) => {
+        const raw = d.data();
+        list.push({
+          uid: raw.uid,
+          tenantCode: raw.tenantCode,
+          displayName: raw.displayName,
+          email: raw.email,
+          photoURL: raw.photoURL,
+          companyName: raw.companyName,
+          role: raw.role,
+          status: raw.status,
+          accountingAccessGranted: Boolean(raw.accountingAccessGranted),
+          createdAt: normalizeTimestampToIso(raw.createdAt),
+          updatedAt: normalizeTimestampToIso(raw.updatedAt),
+          lastLoginAt: normalizeTimestampToIso(raw.lastLoginAt),
+        });
+      });
+      list.sort((a, b) => String(b.lastLoginAt || '').localeCompare(String(a.lastLoginAt || '')));
+      setSubscribers(list);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'users');
+    } finally {
+      setLoadingSubscribers(false);
+    }
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      void fetchSubscribers();
+    }
+  }, [isSuperAdmin, fetchSubscribers]);
+
+  const handleToggleConsent = async () => {
+    if (!userProfile) return;
+    setUpdatingConsent(true);
+    try {
+      const next = !userProfile.accountingAccessGranted;
+      await toggleAccountingAccessGrant(next);
+      showToast(
+        next
+          ? 'تم تفعيل الإذن المؤقت للإدارة بمراجعة ملخص الحسابات ✓'
+          : 'تم سحب الإذن: حساباتك مغلقة بخصوصية تامة الآن 🔒',
+        'info'
+      );
+    } catch {
+      showToast('تعذر تحديث إعداد الخصوصية', 'error');
+    } finally {
+      setUpdatingConsent(false);
+    }
+  };
+
+  const handleAdminToggleSubscriberStatus = async (sub: TenantUserProfile) => {
+    if (!isSuperAdmin) return;
+    if (sub.uid === authUser?.uid) {
+      showToast('لا يمكنك تعطيل حساب الإدارة الخاص بك!', 'error');
+      return;
+    }
+    const nextStatus = sub.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+    try {
+      await updateDoc(doc(db, 'users', sub.uid), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      });
+      setSubscribers((prev) =>
+        prev.map((item) => (item.uid === sub.uid ? { ...item, status: nextStatus } : item))
+      );
+      showToast(
+        nextStatus === 'ACTIVE'
+          ? `تم تفعيل حساب «${sub.displayName}» ✓`
+          : `تم إيقاف حساب «${sub.displayName}» بنجاح`,
+        'info'
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${sub.uid}`);
+    }
+  };
+
+  const handleAdminInspectAuthorizedSnapshot = async (sub: TenantUserProfile) => {
+    if (!sub.accountingAccessGranted) {
+      showToast('بيانات هذا المستخدم محمية: لم يمنح إذن المراجعة الإدارية 🔒', 'error');
+      return;
+    }
+    try {
+      const snapRef = doc(db, 'workspaces', sub.uid, 'auditSnapshot', 'summary');
+      const snap = await getDoc(snapRef);
+      if (!snap.exists()) {
+        showToast('لا يوجد ملخص محاسبي مسجل لهذا الحساب بعد', 'info');
+        return;
+      }
+      const d = snap.data();
+      setAuthorizedPreview({
+        user: sub,
+        summary: {
+          companyName: d.companyName || sub.companyName || '-',
+          baseCurrency: d.baseCurrency || 'SAR',
+          invoicesCount: Number(d.invoicesCount || 0),
+          vouchersCount: Number(d.vouchersCount || 0),
+          productsCount: Number(d.productsCount || 0),
+          contactsCount: Number(d.contactsCount || 0),
+          journalEntriesCount: Number(d.journalEntriesCount || 0),
+          totalSalesBase: Number(d.totalSalesBase || 0),
+        },
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, `workspaces/${sub.uid}/auditSnapshot/summary`);
+    }
+  };
+
   const saveUsersList = (updatedUsers: AppUser[]) => {
     setUsers(updatedUsers);
-    localStorage.setItem('smart_accountant_pro_users', JSON.stringify(updatedUsers));
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
   };
 
   const handleCreateUser = (e: React.FormEvent) => {
@@ -99,7 +235,7 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
       isActive: true,
       permissions: defaultPerms,
       createdAt: new Date().toISOString().split('T')[0],
-      lastLogin: 'لم يسجل دخول بعد',
+      lastLogin: 'جاهز للعمل',
     };
 
     const updated = [...users, newUser];
@@ -108,14 +244,14 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
     setNewUsername('');
     setNewFullName('');
     setNewPin('0000');
-    showToast(`تم إنشاء حساب المستخدم «${newUser.fullName}» بنجاح ✓`, 'success');
+    showToast(`تم إنشاء حساب المستخدم «${newUser.fullName}» داخل مساحتك الخاصة ✓`, 'success');
   };
 
   const handleToggleUserStatus = (userId: string) => {
     const updated = users.map((u) => {
       if (u.id === userId) {
         if (u.role === 'ADMIN' && users.filter((x) => x.role === 'ADMIN' && x.isActive).length <= 1) {
-          showToast('لا يمكن تعطيل حساب المدير الرئيسي الوحيد في النظام!', 'error');
+          showToast('لا يمكن تعطيل حساب المدير الرئيسي الوحيد!', 'error');
           return u;
         }
         return { ...u, isActive: !u.isActive };
@@ -150,10 +286,10 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
         <div>
           <h3 className="text-lg font-black text-white flex items-center gap-2">
             <Users className="w-5 h-5 text-amber-400" />
-            إدارة المستخدمين والصلاحيات وسجل الأمان
+            الأمان والخصوصية المستقلة وصلاحيات الحساب
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            إدارة حسابات الكاشير والمحاسبين، تحديد صلاحيات العمليات، ومتابعة سجل العمليات
+            ملفك المستقل: <span className="font-mono text-cyan-300 font-bold">{tenantCode}</span> • جميع البيانات والعمليات معزولة تماماً عن أي مستخدم آخر
           </p>
         </div>
         <button
@@ -162,13 +298,235 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-slate-950 font-black text-xs cursor-pointer shadow-md shadow-amber-600/20 active:scale-95 transition-all"
         >
           <UserPlus className="w-4 h-4" />
-          <span>إضافة مستخدم جديد</span>
+          <span>إضافة موظف / كاشير فرعي</span>
         </button>
       </div>
 
-      {/* 1. Users Table */}
+      {/* 0. Owner Data Privacy & Administrative Audit Consent Card */}
+      <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-[#040C2E] border-2 border-cyan-500/40 space-y-4 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border shrink-0 ${userProfile?.accountingAccessGranted ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'}`}>
+              {userProfile?.accountingAccessGranted ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-white flex items-center gap-2">
+                <span>خصوصية بياناتك المحاسبية واستقلالية الحساب</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-500/30">
+                  {tenantCode}
+                </span>
+              </h4>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                بشكل افتراضي، حسابك المحاسبي مشفر ومعزول بالكامل: لا يمكن لأي مستخدم أو حتى إدارة المنصة الاطلاع على أرقامك أو عملائك أو فواتيرك إلا إذا قمت بتفعيل الإذن المؤقت للدعم والمراجعة أدناه.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={updatingConsent}
+            onClick={handleToggleConsent}
+            className={`px-4 py-2.5 rounded-xl font-black text-xs cursor-pointer transition-all shrink-0 flex items-center gap-2 border ${
+              userProfile?.accountingAccessGranted
+                ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-400/50'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-lg shadow-emerald-700/20'
+            }`}
+          >
+            {userProfile?.accountingAccessGranted ? (
+              <>
+                <Lock className="w-4 h-4" />
+                <span>إلغاء الإذن وقفل البيانات بالكامل</span>
+              </>
+            ) : (
+              <>
+                <Unlock className="w-4 h-4" />
+                <span>منح إذن مراجعة إدارية مؤقت للدعم</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px] bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+          <div>
+            <span className="text-slate-400">البريد الموثق للحساب: </span>
+            <span className="font-mono text-white font-bold">{userProfile?.email || authUser?.email}</span>
+          </div>
+          <div>
+            <span className="text-slate-400">رقم التعريف الخاص (UID): </span>
+            <span className="font-mono text-cyan-300">{authUser?.uid?.slice(0, 12)}...</span>
+          </div>
+          <div>
+            <span className="text-slate-400">حالة الخصوصية: </span>
+            <span className={userProfile?.accountingAccessGranted ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+              {userProfile?.accountingAccessGranted ? 'مصرّح بمراجعة الملخص للإدارة فقط' : 'عزل تام ومحمي 100% 🔒'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Super Admin Control Panel (Visible ONLY to verified Super Admin, ZERO access to accounting records unless user explicitly grants consent) */}
+      {isSuperAdmin && (
+        <div className="p-5 rounded-2xl bg-slate-900 border-2 border-amber-500/50 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-amber-300">
+                  لوحة إدارة حسابات المشتركين (Super Admin Console)
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  إدارة حالة الحسابات دون الاطلاع على البيانات المحاسبية للمستخدمين إلا بتخويل صريح من صاحب الحساب
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={fetchSubscribers}
+              disabled={loadingSubscribers}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold border border-slate-700 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingSubscribers ? 'animate-spin' : ''}`} />
+              <span>تحديث القائمة ({subscribers.length})</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="bg-slate-800/70 border-b border-slate-800 text-slate-400">
+                  <th className="p-3">المشترك والمنشأة</th>
+                  <th className="p-3">رقم التعريف</th>
+                  <th className="p-3">البريد الإلكتروني</th>
+                  <th className="p-3">حالة الحساب</th>
+                  <th className="p-3">خصوصية المحاسبة</th>
+                  <th className="p-3 text-center">إدارة الحساب</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/70">
+                {subscribers.map((sub) => (
+                  <tr key={sub.uid} className="hover:bg-slate-800/30">
+                    <td className="p-3">
+                      <div className="font-bold text-white">{sub.displayName}</div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Building2 className="w-3 h-3 text-amber-400" />
+                        <span>{sub.companyName || 'منشأة مستقلة'}</span>
+                      </div>
+                    </td>
+                    <td className="p-3 font-mono text-cyan-300 font-bold">{sub.tenantCode}</td>
+                    <td className="p-3 font-mono text-slate-300 text-[11px]">{sub.email}</td>
+                    <td className="p-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          sub.status === 'ACTIVE'
+                            ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/40'
+                            : 'bg-red-950/60 text-red-400 border-red-500/40'
+                        }`}
+                      >
+                        {sub.status === 'ACTIVE' ? 'نشط ✓' : 'موقوف ✕'}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      {sub.accountingAccessGranted ? (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminInspectAuthorizedSnapshot(sub)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>معاينة الملخص المصرح به</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 text-[10px] border border-slate-700">
+                          <Lock className="w-3 h-3 text-emerald-400" />
+                          <span>مقفل بخصوصية المالك</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      {sub.uid === authUser?.uid ? (
+                        <span className="text-[10px] text-amber-400 font-bold">مدير المنصة</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminToggleSubscriberStatus(sub)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                            sub.status === 'ACTIVE'
+                              ? 'bg-red-950/50 hover:bg-red-900/70 text-red-300 border border-red-500/40'
+                              : 'bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 border border-emerald-500/40'
+                          }`}
+                        >
+                          {sub.status === 'ACTIVE' ? (
+                            <>
+                              <Ban className="w-3 h-3" />
+                              <span>إيقاف مؤقت</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>إعادة تفعيل</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {authorizedPreview && (
+            <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <h5 className="text-xs font-black text-amber-300">
+                  ملخص إداري مصرح به: {authorizedPreview.user.displayName} ({authorizedPreview.user.tenantCode})
+                </h5>
+                <button
+                  type="button"
+                  onClick={() => setAuthorizedPreview(null)}
+                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                >
+                  إغلاق ✕
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">المنشأة</div>
+                  <div className="font-bold text-white truncate">{authorizedPreview.summary.companyName}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">الفواتير</div>
+                  <div className="font-mono font-bold text-cyan-300">{authorizedPreview.summary.invoicesCount}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">السندات</div>
+                  <div className="font-mono font-bold text-emerald-300">{authorizedPreview.summary.vouchersCount}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">الأصناف</div>
+                  <div className="font-mono font-bold text-white">{authorizedPreview.summary.productsCount}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">العملاء/الموردون</div>
+                  <div className="font-mono font-bold text-white">{authorizedPreview.summary.contactsCount}</div>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">إجمالي المبيعات</div>
+                  <div className="font-mono font-bold text-amber-300">
+                    {authorizedPreview.summary.totalSalesBase.toLocaleString('en-US', { minimumFractionDigits: 2 })} {authorizedPreview.summary.baseCurrency}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 1. Branch Operators Table within this isolated tenant */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-        <h4 className="text-xs font-black text-amber-300">قائمة مستخدمي النظام</h4>
+        <h4 className="text-xs font-black text-amber-300">طاقم العمل الداخلي وصلاحيات التشغيل الخاصة بمنشأتك</h4>
 
         <div className="overflow-x-auto rounded-xl border border-slate-800">
           <table className="w-full text-right text-xs">
@@ -233,7 +591,6 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
                         type="button"
                         onClick={() => setSelectedUser(u)}
                         className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold transition-colors cursor-pointer"
-                        title="تعديل مصفوفة الصلاحيات"
                       >
                         الصلاحيات
                       </button>
@@ -242,7 +599,6 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
                           type="button"
                           onClick={() => handleDeleteUser(u.id)}
                           className="p-1 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-500/30 transition-colors cursor-pointer"
-                          title="حذف المستخدم"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -256,39 +612,43 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
         </div>
       </div>
 
-      {/* 2. Audit Log (سجل العمليات والأمان) */}
+      {/* 2. Isolated Tenant Audit Trail Log */}
       <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-cyan-400" />
-            <h4 className="text-xs font-black text-white">سجل العمليات والأمان التلقائي (Audit Trail)</h4>
+            <h4 className="text-xs font-black text-white">سجل العمليات والأمان الخاص بحسابك (Audit Trail)</h4>
           </div>
-          <span className="text-[10px] text-slate-400">تسجيل محلي دقيق لجميع حركات النظام</span>
+          <span className="text-[10px] text-slate-400">معزول ومربوط بحسابك ({contextAuditLogs.length} عملية)</span>
         </div>
 
-        <div className="space-y-2">
-          {auditLogs.map((log) => (
-            <div
-              key={log.id}
-              className="p-3 rounded-xl bg-slate-800/40 border border-slate-800 flex items-center justify-between text-xs"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center text-xs">
-                  ⚡
-                </div>
-                <div>
-                  <div className="font-bold text-white flex items-center gap-2">
-                    <span>{log.action}</span>
-                    <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                      بواسطة: {log.userName}
-                    </span>
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {contextAuditLogs.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6">لا توجد عمليات مسجلة في سجل هذا الحساب بعد.</p>
+          ) : (
+            contextAuditLogs.slice(0, 30).map((log) => (
+              <div
+                key={log.id}
+                className="p-3 rounded-xl bg-slate-800/40 border border-slate-800 flex items-center justify-between text-xs"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center text-xs">
+                    ⚡
                   </div>
-                  <div className="text-slate-400 text-[11px] mt-0.5">{log.details}</div>
+                  <div>
+                    <div className="font-bold text-white flex items-center gap-2">
+                      <span>{log.module} - {log.action}</span>
+                      <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                        بواسطة: {log.userName}
+                      </span>
+                    </div>
+                    <div className="text-slate-400 text-[11px] mt-0.5">{log.details}</div>
+                  </div>
                 </div>
+                <div className="font-mono text-slate-500 text-[11px]">{log.timestamp.slice(0, 19).replace('T', ' ')}</div>
               </div>
-              <div className="font-mono text-slate-500 text-[11px]">{log.timestamp}</div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
@@ -297,12 +657,12 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
           <form
             onSubmit={handleCreateUser}
-            className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl p-6 text-right space-y-4"
+            className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl p-6 text-right space-y-4 my-auto"
           >
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h4 className="font-bold text-white text-sm flex items-center gap-2">
                 <UserPlus className="w-4 h-4 text-amber-400" />
-                إنشاء حساب مستخدم جديد
+                إضافة موظف داخل مساحتك الخاصة
               </h4>
               <button
                 type="button"
@@ -315,11 +675,11 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
 
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">اسم المستخدم (للدخول) *</label>
+                <label className="block text-xs font-bold text-slate-300 mb-1">اسم الدخول المختصر *</label>
                 <input
                   type="text"
                   required
-                  placeholder="مثال: cashier1 أو ahmed"
+                  placeholder="مثال: cashier1"
                   value={newUsername}
                   onChange={(e) => setNewUsername(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
@@ -331,7 +691,7 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
                 <input
                   type="text"
                   required
-                  placeholder="مثال: أحمد محمد - كاشير فرع العليا"
+                  placeholder="مثال: أحمد محمد"
                   value={newFullName}
                   onChange={(e) => setNewFullName(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
@@ -345,15 +705,15 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
                   onChange={(e) => setNewRole(e.target.value as UserRole)}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-amber-500"
                 >
-                  <option value="CASHIER">كاشير نقاط البيع (فواتير وإصدار فقط)</option>
-                  <option value="ACCOUNTANT">محاسب عام (قيود وسندات وتقارير)</option>
-                  <option value="WAREHOUSE_MANAGER">أمين مستودع (سندات المخزن والتحويل)</option>
-                  <option value="ADMIN">مدير عام (كافة الصلاحيات والإعدادات)</option>
+                  <option value="CASHIER">كاشير نقاط البيع</option>
+                  <option value="ACCOUNTANT">محاسب عام</option>
+                  <option value="WAREHOUSE_MANAGER">أمين مستودع</option>
+                  <option value="ADMIN">مدير فرعي</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">رمز الدخول السريع (PIN 4 أرقام)</label>
+                <label className="block text-xs font-bold text-slate-300 mb-1">رمز PIN</label>
                 <input
                   type="text"
                   maxLength={6}
@@ -368,9 +728,9 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 type="submit"
-                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-black text-xs cursor-pointer shadow-lg shadow-amber-600/20 active:scale-95 transition-all"
+                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-black text-xs cursor-pointer shadow-lg shadow-amber-600/20"
               >
-                تأكيد وإنشاء الحساب
+                حفظ وإضافة
               </button>
               <button
                 type="button"
@@ -387,7 +747,7 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
       {/* Edit Permissions Modal */}
       {selectedUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg shadow-2xl p-6 text-right space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg shadow-2xl p-6 text-right space-y-4 my-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h4 className="font-bold text-white text-sm flex items-center gap-2">
@@ -407,14 +767,14 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
 
             <div className="space-y-2.5 max-h-80 overflow-y-auto p-1">
               {[
-                { key: 'canView', label: 'صلاحية استعراض الشاشات والبيانات (View)' },
-                { key: 'canAdd', label: 'صلاحية إنشاء وإضافة فواتير وسندات جديدة (Add)' },
-                { key: 'canEdit', label: 'صلاحية تعديل السجلات والبيانات (Edit)' },
-                { key: 'canDelete', label: 'صلاحية حذف الفواتير والمستندات (Delete)' },
-                { key: 'canPrint', label: 'صلاحية الطباعة وتصدير PDF (Print & Export)' },
-                { key: 'canViewReports', label: 'صلاحية الاطلاع على القوائم المالية والأرباح (Financial Reports)' },
-                { key: 'canManageSettings', label: 'صلاحية إدارة إعدادات النظام وقواعد البيانات (Settings)' },
-                { key: 'canResetDatabase', label: 'صلاحية التصفير الشامل والنسخ الاحتياطي (Danger Zone)' },
+                { key: 'canView', label: 'صلاحية استعراض الشاشات والبيانات' },
+                { key: 'canAdd', label: 'صلاحية إنشاء وإضافة فواتير وسندات جديدة' },
+                { key: 'canEdit', label: 'صلاحية تعديل السجلات والبيانات' },
+                { key: 'canDelete', label: 'صلاحية حذف الفواتير والمستندات' },
+                { key: 'canPrint', label: 'صلاحية الطباعة وتصدير PDF والمعاينة' },
+                { key: 'canViewReports', label: 'صلاحية الاطلاع على القوائم المالية والأرباح' },
+                { key: 'canManageSettings', label: 'صلاحية إدارة إعدادات النظام' },
+                { key: 'canResetDatabase', label: 'صلاحية التصفير الشامل والنسخ الاحتياطي' },
               ].map((perm) => (
                 <label
                   key={perm.key}
@@ -423,7 +783,7 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
                   <span className="text-xs font-bold text-slate-200">{perm.label}</span>
                   <input
                     type="checkbox"
-                    checked={(selectedUser.permissions as any)[perm.key]}
+                    checked={Boolean(selectedUser.permissions[perm.key as keyof UserPermission])}
                     onChange={(e) => {
                       const updatedPerms = {
                         ...selectedUser.permissions,
@@ -444,9 +804,9 @@ export const UsersPermissionsTab: React.FC<UsersPermissionsTabProps> = ({ showTo
                   handleUpdatePermissions(selectedUser.id, selectedUser.permissions);
                   setSelectedUser(null);
                 }}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-lg active:scale-95 transition-all"
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs cursor-pointer shadow-lg"
               >
-                حفظ الصلاحيات المحدثة
+                حفظ الصلاحيات
               </button>
               <button
                 type="button"
